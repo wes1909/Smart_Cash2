@@ -9,7 +9,7 @@
 
 'use strict';
 
-const CACHE_NAME    = 'smartcash-v1.1.0';
+const CACHE_NAME    = 'smartcash-v1.2.0-auth';
 const OFFLINE_URL   = './index.html';
 
 // Assets locais para pre-cachear no install
@@ -20,6 +20,8 @@ const STATIC_ASSETS = [
   './css/style.css',
   './js/db.js',
   './js/app.js',
+  './js/supabase.js',
+  './js/auth.js',
   './js/dashboard.js',
   './js/contas.js',
   './js/dividas.js',
@@ -32,7 +34,8 @@ const STATIC_ASSETS = [
 
 // Assets externos (CDN) — cacheados na 1ª visita
 const EXTERNAL_ASSETS = [
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
 // ============================================================
@@ -78,7 +81,7 @@ self.addEventListener('activate', event => {
     caches.keys().then(nomes => {
       return Promise.all(
         nomes
-          .filter(nome => nome !== CACHE_NAME)
+          .filter(nome => nome.startsWith('smartcash-') && nome !== CACHE_NAME)
           .map(nome => {
             console.log('[SW] Removendo cache antigo:', nome);
             return caches.delete(nome);
@@ -97,6 +100,14 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   // Ignora requisições não-GET e extensões do browser
   if (event.request.method !== 'GET') return;
+  // Apenas assets locais e CDNs explicitamente permitidos entram no cache.
+  // Chamadas ao Supabase (inclusive GET de Auth) seguem diretamente à rede.
+  const requestURL = new URL(event.request.url);
+  if (requestURL.origin !== self.location.origin &&
+      !EXTERNAL_ASSETS.includes(event.request.url)) return;
+  if (event.request.headers.has('Authorization') ||
+      requestURL.pathname.startsWith('/auth/v1/') ||
+      requestURL.pathname.startsWith('/rest/v1/')) return;
   if (event.request.url.startsWith('chrome-extension://')) return;
   if (event.request.url.includes('indexeddb')) return;
 

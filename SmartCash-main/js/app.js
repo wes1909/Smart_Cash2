@@ -37,9 +37,20 @@ const AppState = {
 
 /**
  * Ponto de entrada da aplicação.
- * Chamado quando o DOM estiver pronto.
+ * Chamado pela autenticação após confirmar uma sessão.
  */
-async function initApp() {
+let appInitialization = null;
+
+function initApp(session) {
+  if (!session || !session.user) {
+    return Promise.reject(new Error('É necessário autenticar antes de iniciar o SmartCash.'));
+  }
+  // Mantém inclusive falhas: repetir uma inicialização parcial duplicaria eventos.
+  if (!appInitialization) appInitialization = initializeApp();
+  return appInitialization;
+}
+
+async function initializeApp() {
   try {
     // 1. Abre o banco de dados
     await initDB();
@@ -533,4 +544,4 @@ function registerServiceWorker() {
 // ENTRADA DA APLICAÇÃO
 // ============================================================
 
-document.addEventListener('DOMContentLoaded', initApp);
+// O ponto de entrada é gerenciado por js/auth.js.

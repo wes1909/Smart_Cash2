@@ -1,0 +1,165 @@
+'use strict';
+
+// A sessão pertence ao Supabase; os dados financeiros continuam no IndexedDB.
+document.addEventListener('DOMContentLoaded', () => {
+  const auth = document.getElementById('authContainer');
+  const app = document.getElementById('appContainer');
+  const form = document.getElementById('authForm');
+  const email = document.getElementById('authEmail');
+  const password = document.getElementById('authPassword');
+  const submit = document.getElementById('authSubmit');
+  const toggle = document.getElementById('authToggle');
+  const status = document.getElementById('authStatus');
+  const retry = document.getElementById('authRetry');
+  const logout = document.getElementById('btnLogout');
+  let signup = false;
+  let busy = false;
+  let revision = 0;
+  let activeSession = null;
+
+  function message(text, error = false) {
+    status.textContent = text;
+    status.classList.toggle('auth-error', error);
+  }
+
+  function setBusy(value) {
+    busy = value;
+    submit.disabled = toggle.disabled = email.disabled = password.disabled = value;
+    form.setAttribute('aria-busy', String(value));
+  }
+
+  function hideApp() {
+    app.hidden = true;
+    auth.hidden = false;
+    closeSidebar();
+    document.querySelectorAll('.modal.active').forEach(modal => closeModal(modal.id));
+    password.value = '';
+    document.getElementById('toastContainer').replaceChildren();
+  }
+
+  async function applySession(session, version) {
+    if (version !== revision) return;
+    activeSession = session;
+    retry.hidden = true;
+    if (!session || !session.user) {
+      hideApp();
+      form.hidden = false;
+      message('Entre com seu e-mail e senha ou crie uma conta.');
+      return;
+    }
+    if (!app.hidden) return; // Renovação de token não reinicia a aplicação.
+    form.hidden = true;
+    message('Preparando o SmartCash...');
+    try {
+      await initApp(session);
+      if (version !== revision || !activeSession) return;
+      password.value = '';
+      auth.hidden = true;
+      app.hidden = false;
+      // Os gráficos foram criados enquanto o contêiner estava oculto.
+      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    } catch (error) {
+      if (version !== revision) return;
+      hideApp();
+      form.hidden = true;
+      message('Não foi possível inicializar o SmartCash. Recarregue a página.', true);
+      console.error('[Auth] Inicialização:', error);
+    }
+  }
+
+  let client;
+  try {
+    client = supabaseClient;
+  } catch (error) {
+    message('Não foi possível carregar a autenticação. Verifique sua conexão e recarregue a página.', true);
+    return;
+  }
+
+  async function checkSession() {
+    const version = ++revision;
+    retry.hidden = true;
+    form.hidden = true;
+    message('Verificando sessão...');
+    try {
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      await applySession(data.session, version);
+    } catch (error) {
+      if (version !== revision) return;
+      hideApp();
+      message('Não foi possível verificar a sessão. Verifique sua conexão e tente novamente.', true);
+      retry.hidden = false;
+    }
+  }
+
+  client.auth.onAuthStateChange((event, session) => {
+    const version = ++revision;
+    // Oculta imediatamente na saída; trabalho assíncrono fora do callback Auth.
+    if (!session) {
+      activeSession = null;
+      hideApp();
+    }
+    setTimeout(() => { void applySession(session, version); }, 0);
+  });
+
+  toggle.addEventListener('click', () => {
+    signup = !signup;
+    document.getElementById('authTitle').textContent = signup ? 'Crie sua conta' : 'Acesse sua conta';
+    submit.textContent = signup ? 'Criar conta' : 'Entrar';
+    toggle.textContent = signup ? 'Já tenho uma conta' : 'Criar uma conta';
+    password.autocomplete = signup ? 'new-password' : 'current-password';
+    password.value = '';
+    message(signup ? 'Informe seu e-mail e uma senha para se cadastrar.' : 'Entre com seu e-mail e senha.');
+  });
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy) return;
+    const creating = signup;
+    const credentials = { email: email.value.trim(), password: password.value };
+    setBusy(true);
+    message(creating ? 'Criando conta...' : 'Entrando...');
+    try {
+      const { data, error } = await (creating
+        ? client.auth.signUp(credentials)
+        : client.auth.signInWithPassword(credentials));
+      if (error) throw error;
+      if (data.session && data.session.user) {
+        await applySession(data.session, ++revision);
+      } else {
+        await applySession(null, ++revision);
+        message(creating
+          ? 'Cadastro recebido. Se necessário, confirme seu e-mail antes de entrar. Nenhuma sessão foi iniciada.'
+          : 'Não foi possível iniciar uma sessão. Tente entrar novamente.', !creating);
+      }
+    } catch (error) {
+      // textContent evita inserir HTML vindo das mensagens do servidor.
+      message(error.message || 'Falha na autenticação. Tente novamente.', true);
+    } finally {
+      password.value = '';
+      setBusy(false);
+    }
+  });
+
+  logout.addEventListener('click', async () => {
+    if (logout.disabled) return;
+    logout.disabled = true;
+    try {
+      // Encerra a sessão deste navegador; outras sessões permanecem independentes.
+      const { error } = await client.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+      await applySession(null, ++revision);
+      email.value = '';
+      email.focus();
+    } catch (error) {
+      showToast('Não foi possível sair. Verifique sua conexão e tente novamente.', 'error');
+    } finally {
+      logout.disabled = false;
+    }
+  });
+
+  retry.addEventListener('click', () => { void checkSession(); });
+  // Atualiza também instalações existentes antes do primeiro login.
+  registerServiceWorker();
+  void checkSession();
+});

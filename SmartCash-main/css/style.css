@@ -1047,3 +1047,40 @@ body {
   .projections-grid { grid-template-columns: 1fr 1fr; }
   .sim-grid { grid-template-columns: 1fr 1fr; }
 }
+
+
+/* Autenticação: independente das telas financeiras. */
+[hidden] { display: none !important; }
+.auth-container {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.auth-card h1 { font-size: 24px; margin: 20px 0 8px; }
+#authStatus { color: var(--text-secondary); margin-bottom: 20px; overflow-wrap: anywhere; }
+#authStatus.auth-error { color: var(--danger); }
+#authForm { display: flex; flex-direction: column; gap: 12px; }
+#authForm .form-group { margin: 0; }
+#authForm input { width: 100%; min-width: 0; }
+#authForm .btn, #authRetry { width: 100%; justify-content: center; }
+#authForm input:focus-visible, .auth-card button:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px;
+}
+#authForm button:disabled, #btnLogout:disabled { opacity: 0.65; cursor: wait; }
+@media (max-width: 480px) {
+  .auth-card { padding: 22px 18px; }
+  #authForm input { font-size: 16px; }
+  .topbar-right { gap: 8px; }
+  #btnLogout { padding: 6px 10px; }
+}
