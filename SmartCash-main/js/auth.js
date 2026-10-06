@@ -1,5 +1,32 @@
 'use strict';
 
+// Nunca apresenta diretamente ao usuário o texto técnico retornado pelo servidor.
+function getAuthErrorMessage(error) {
+  const text = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+
+  if (text.includes('invalid login credentials')) {
+    return 'E-mail ou senha incorretos.';
+  }
+  if (text.includes('email not confirmed')) {
+    return 'Confirme seu e-mail antes de entrar.';
+  }
+  if (text.includes('user already registered')) {
+    return 'Já existe uma conta cadastrada com este e-mail.';
+  }
+  const minimumLength = text.match(/password should be at least (\d+) characters/);
+  if (minimumLength) {
+    return `A senha deve ter pelo menos ${minimumLength[1]} caracteres.`;
+  }
+  if (/invalid email|invalid.*email.*(?:address|format)|email.*(?:invalid|not valid)|unable to validate email/.test(text)) {
+    return 'Informe um endereço de e-mail válido.';
+  }
+  if (/failed to fetch|fetch failed|network|connection|load failed|timeout|timed out|err_internet_disconnected/.test(text) ||
+      error?.name === 'AuthRetryableFetchError') {
+    return 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.';
+  }
+  return 'Não foi possível concluir a operação. Tente novamente.';
+}
+
 // A sessão pertence ao Supabase; os dados financeiros continuam no IndexedDB.
 document.addEventListener('DOMContentLoaded', () => {
   const auth = document.getElementById('authContainer');
@@ -87,7 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       if (version !== revision) return;
       hideApp();
-      message('Não foi possível verificar a sessão. Verifique sua conexão e tente novamente.', true);
+      console.error('[Auth] Verificação de sessão:', error);
+      message(getAuthErrorMessage(error), true);
       retry.hidden = false;
     }
   }
@@ -133,8 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
           : 'Não foi possível iniciar uma sessão. Tente entrar novamente.', !creating);
       }
     } catch (error) {
-      // textContent evita inserir HTML vindo das mensagens do servidor.
-      message(error.message || 'Falha na autenticação. Tente novamente.', true);
+      console.error('[Auth] Login/cadastro:', error);
+      message(getAuthErrorMessage(error), true);
     } finally {
       password.value = '';
       setBusy(false);
@@ -152,7 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
       email.value = '';
       email.focus();
     } catch (error) {
-      showToast('Não foi possível sair. Verifique sua conexão e tente novamente.', 'error');
+      console.error('[Auth] Logout:', error);
+      showToast(getAuthErrorMessage(error), 'error');
     } finally {
       logout.disabled = false;
     }
