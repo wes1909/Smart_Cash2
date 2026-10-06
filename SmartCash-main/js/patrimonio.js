@@ -21,11 +21,14 @@
  * Renderiza a tela de Patrimônio completa.
  */
 async function renderPatrimonio() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const [reservas, investimentos] = await Promise.all([
       dbGetAll('reservas'),
       dbGetAll('investimentos')
     ]);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // ── Totais ───────────────────────────────────────────────
 
@@ -69,6 +72,7 @@ async function renderPatrimonio() {
     setupFormInvestimento();
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Patrimônio] Erro:', err);
     showToast('Erro ao carregar patrimônio.', 'error');
   }
@@ -268,11 +272,16 @@ function abrirFormReserva(reserva = null) {
 }
 
 async function editarReserva(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const r = await dbGet('reservas', id);
+  if (!isCurrentAppSession(sessionEpoch)) return;
   if (r) abrirFormReserva(r);
 }
 
 async function salvarReserva() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const id            = document.getElementById('reservaId')?.value;
   const mesReferencia = document.getElementById('reservaMes')?.value || '';
   const valorGuardado = parseFloat(document.getElementById('reservaValor')?.value) || 0;
@@ -288,23 +297,33 @@ async function salvarReserva() {
 
   try {
     await dbPut('reservas', reserva);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalReserva');
     await renderPatrimonio();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Reserva atualizada!' : 'Reserva registrada! 💪');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao salvar reserva.', 'error');
   }
 }
 
 function excluirReserva(id) {
   showConfirm('Excluir este registro de reserva?', async () => {
+    const sessionEpoch = appSessionEpoch;
+    if (!isCurrentAppSession(sessionEpoch)) return;
     try {
       await dbDelete('reservas', id);
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderPatrimonio();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderDashboard();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Reserva excluída.');
     } catch (err) {
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Erro ao excluir.', 'error');
     }
   });
@@ -339,11 +358,16 @@ function abrirFormInvestimento(inv = null) {
 }
 
 async function editarInvestimento(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const inv = await dbGet('investimentos', id);
+  if (!isCurrentAppSession(sessionEpoch)) return;
   if (inv) abrirFormInvestimento(inv);
 }
 
 async function salvarInvestimento() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const id                = document.getElementById('investId')?.value;
   const nome              = (document.getElementById('investNome')?.value || '').trim();
   const saldoInicial      = parseFloat(document.getElementById('investSaldoInicial')?.value) || 0;
@@ -361,21 +385,29 @@ async function salvarInvestimento() {
 
   try {
     await dbPut('investimentos', inv);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalInvestimento');
     await renderPatrimonio();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Investimento atualizado!' : 'Investimento adicionado! 📈');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao salvar investimento.', 'error');
   }
 }
 
 function excluirInvestimento(id) {
   showConfirm('Excluir este investimento?', async () => {
+    const sessionEpoch = appSessionEpoch;
+    if (!isCurrentAppSession(sessionEpoch)) return;
     try {
       await dbDelete('investimentos', id);
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderPatrimonio();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Investimento excluído.');
     } catch (err) {
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Erro ao excluir.', 'error');
     }
   });

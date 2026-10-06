@@ -13,6 +13,15 @@ let _chartPizza  = null;
 let _chartBarras = null;
 let _chartLinha  = null;
 
+function resetDashboardState() {
+  for (const chart of [_chartPizza, _chartBarras, _chartLinha]) {
+    if (chart) chart.destroy();
+  }
+  _chartPizza = null;
+  _chartBarras = null;
+  _chartLinha = null;
+}
+
 // ============================================================
 // RENDER PRINCIPAL
 // ============================================================
@@ -22,6 +31,8 @@ let _chartLinha  = null;
  * Carrega dados do banco e atualiza cards + gráficos.
  */
 async function renderDashboard() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const mes    = getCurrentMonth();
 
@@ -34,6 +45,7 @@ async function renderDashboard() {
       dbGetAll('reservas'),
       dbGetAll('investimentos')
     ]);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // ── Cálculos ────────────────────────────────────────────
 
@@ -84,8 +96,10 @@ async function renderDashboard() {
     renderChartPizza(gastos);
     renderChartBarras(gastos);
     await renderChartLinha(reservas, investimentos);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Dashboard] Erro:', err);
     showToast('Erro ao carregar o dashboard.', 'error');
   }
@@ -177,10 +191,14 @@ function abrirFormGanho(ganho = null) {
  * @param {number} id
  */
 async function editarGanho(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const g = await dbGet('ganhos', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (g) abrirFormGanho(g);
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao carregar ganho.', 'error');
   }
 }
@@ -189,6 +207,8 @@ async function editarGanho(id) {
  * Salva um ganho (insert ou update) após validação.
  */
 async function salvarGanho() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const id        = document.getElementById('ganhoId')?.value;
   const data      = document.getElementById('ganhoData')?.value || '';
   const descricao = (document.getElementById('ganhoDescricao')?.value || '').trim();
@@ -220,11 +240,15 @@ async function salvarGanho() {
 
   try {
     await dbPut('ganhos', ganho);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalGanho');
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (AppState.currentScreen === 'planejamento') await renderPlanejamento();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Ganho atualizado!' : 'Ganho lançado com sucesso!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Dashboard] Erro ao salvar ganho:', err);
     showToast('Erro ao salvar ganho.', 'error');
   }
@@ -236,12 +260,18 @@ async function salvarGanho() {
  */
 function excluirGanho(id) {
   showConfirm('Excluir este lançamento de ganho?', async () => {
+    const sessionEpoch = appSessionEpoch;
+    if (!isCurrentAppSession(sessionEpoch)) return;
     try {
       await dbDelete('ganhos', id);
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderDashboard();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       if (AppState.currentScreen === 'planejamento') await renderPlanejamento();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Ganho excluído.');
     } catch (err) {
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Erro ao excluir ganho.', 'error');
     }
   });
@@ -426,6 +456,8 @@ function renderChartBarras(gastos) {
  * @param {Array} investimentos Todos os investimentos
  */
 async function renderChartLinha(reservas, investimentos) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const canvas = document.getElementById('chartLinha');
   if (!canvas) return;
 

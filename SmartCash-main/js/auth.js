@@ -27,7 +27,7 @@ function getAuthErrorMessage(error) {
   return 'Não foi possível concluir a operação. Tente novamente.';
 }
 
-// A sessão pertence ao Supabase; os dados financeiros continuam no IndexedDB.
+// A sessão e os dados financeiros pertencem ao usuário autenticado no Supabase.
 document.addEventListener('DOMContentLoaded', () => {
   const auth = document.getElementById('authContainer');
   const app = document.getElementById('appContainer');
@@ -38,7 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.getElementById('authToggle');
   const status = document.getElementById('authStatus');
   const retry = document.getElementById('authRetry');
-  const logout = document.getElementById('btnLogout');
   let signup = false;
   let busy = false;
   let revision = 0;
@@ -70,16 +69,22 @@ document.addEventListener('DOMContentLoaded', () => {
     retry.hidden = true;
     if (!session || !session.user) {
       hideApp();
+      resetAppSession();
       form.hidden = false;
       message('Entre com seu e-mail e senha ou crie uma conta.');
       return;
     }
-    if (!app.hidden) return; // Renovação de token não reinicia a aplicação.
+    if (appUserId !== session.user.id) {
+      hideApp();
+      resetAppSession();
+    }
+    if (!app.hidden) return; // Renovação de token do mesmo usuário não reinicia.
     form.hidden = true;
     message('Preparando o SmartCash...');
     try {
       await initApp(session);
-      if (version !== revision || !activeSession) return;
+      if (version !== revision || activeSession?.user?.id !== session.user.id ||
+          appUserId !== session.user.id) return;
       password.value = '';
       auth.hidden = true;
       app.hidden = false;
@@ -88,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       if (version !== revision) return;
       hideApp();
+      resetAppSession();
       form.hidden = true;
       message('Não foi possível inicializar o SmartCash. Recarregue a página.', true);
       console.error('[Auth] Inicialização:', error);
@@ -114,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       if (version !== revision) return;
       hideApp();
+      resetAppSession();
       console.error('[Auth] Verificação de sessão:', error);
       message(getAuthErrorMessage(error), true);
       retry.hidden = false;
@@ -123,9 +130,10 @@ document.addEventListener('DOMContentLoaded', () => {
   client.auth.onAuthStateChange((event, session) => {
     const version = ++revision;
     // Oculta imediatamente na saída; trabalho assíncrono fora do callback Auth.
-    if (!session) {
+    if (!session || appUserId !== session.user.id) {
       activeSession = null;
       hideApp();
+      resetAppSession();
     }
     setTimeout(() => { void applySession(session, version); }, 0);
   });
@@ -169,9 +177,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  logout.addEventListener('click', async () => {
+  // Delegação no contêiner: seu conteúdo é recriado a cada encerramento de sessão.
+  app.addEventListener('click', async event => {
+    const logout = event.target.closest('#btnLogout');
+    if (!logout) return;
     if (logout.disabled) return;
     logout.disabled = true;
+    ++revision;
+    activeSession = null;
+    hideApp();
+    resetAppSession();
+    form.hidden = true;
+    message('Encerrando sessão...');
     try {
       // Encerra a sessão deste navegador; outras sessões permanecem independentes.
       const { error } = await client.auth.signOut({ scope: 'local' });
@@ -181,7 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
       email.focus();
     } catch (error) {
       console.error('[Auth] Logout:', error);
-      showToast(getAuthErrorMessage(error), 'error');
+      // Se a saída falhar, reconstrói a interface a partir da sessão real.
+      await checkSession();
+      message(getAuthErrorMessage(error), true);
     } finally {
       logout.disabled = false;
     }

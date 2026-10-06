@@ -19,6 +19,8 @@
  * Renderiza a tela de Planejamento Semanal.
  */
 async function renderPlanejamento() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const mes    = getCurrentMonth();
     const config = AppState.config;
@@ -30,6 +32,7 @@ async function renderPlanejamento() {
       dbGetGastosPorMes(mes),
       dbGetGanhosPorMes(mes)
     ]);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // ── Cálculo informativo do saldo do mês ──────────────────
     // (o limite semanal em si é definido manualmente pelo usuário,
@@ -68,6 +71,7 @@ async function renderPlanejamento() {
     setupLimiteSemanal();
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Planejamento] Erro:', err);
     showToast('Erro ao carregar planejamento.', 'error');
   }
@@ -92,6 +96,8 @@ function setupLimiteSemanal() {
  * Salva o limite semanal manual informado pelo usuário.
  */
 async function salvarLimiteSemanal() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const valor = parseFloat(document.getElementById('planLimiteSemanal')?.value) || 0;
 
   if (valor <= 0) {
@@ -103,9 +109,12 @@ async function salvarLimiteSemanal() {
 
   try {
     await saveConfig();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Limite semanal salvo! ✅');
     await renderPlanejamento();
+    if (!isCurrentAppSession(sessionEpoch)) return;
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Planejamento] Erro ao salvar limite semanal:', err);
     showToast('Erro ao salvar limite semanal.', 'error');
   }
@@ -257,7 +266,10 @@ function setupFiltroSemana() {
   const el = document.getElementById('filterSemana');
   if (el && !el._scListener) {
     el.addEventListener('change', async () => {
+      const sessionEpoch = appSessionEpoch;
+      if (!isCurrentAppSession(sessionEpoch)) return;
       const gastos = await dbGetGastosPorMes(getCurrentMonth());
+      if (!isCurrentAppSession(sessionEpoch)) return;
       renderGastosTable(gastos);
     });
     el._scListener = true;
@@ -318,10 +330,14 @@ function abrirFormGasto(gasto = null) {
  * @param {number} id
  */
 async function editarGasto(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const g = await dbGet('gastos', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (g) abrirFormGasto(g);
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao carregar gasto.', 'error');
   }
 }
@@ -330,6 +346,8 @@ async function editarGasto(id) {
  * Salva um gasto (insert ou update) após validação.
  */
 async function salvarGasto() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const id        = document.getElementById('gastoId')?.value;
   const data      = document.getElementById('gastoData')?.value || '';
   const descricao = (document.getElementById('gastoDescricao')?.value || '').trim();
@@ -357,11 +375,15 @@ async function salvarGasto() {
 
   try {
     await dbPut('gastos', gasto);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalGasto');
     await renderPlanejamento();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Gasto atualizado!' : 'Gasto lançado com sucesso!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Planejamento] Erro ao salvar gasto:', err);
     showToast('Erro ao salvar gasto.', 'error');
   }
@@ -373,12 +395,18 @@ async function salvarGasto() {
  */
 function excluirGasto(id) {
   showConfirm('Excluir este lançamento?', async () => {
+    const sessionEpoch = appSessionEpoch;
+    if (!isCurrentAppSession(sessionEpoch)) return;
     try {
       await dbDelete('gastos', id);
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderPlanejamento();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       await renderDashboard();
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Gasto excluído.');
     } catch (err) {
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Erro ao excluir gasto.', 'error');
     }
   });

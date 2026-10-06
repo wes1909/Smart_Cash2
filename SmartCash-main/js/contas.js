@@ -19,10 +19,14 @@
  * Renderiza a tela de Contas com tabela e filtros.
  */
 async function renderContas() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const mes       = getCurrentMonth();
     const pagamentos = await dbGetPagamentosPorMes(mes);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     let   contas     = await dbGetAll('contas');
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // Aplica filtros
     contas = aplicarFiltrosContas(contas);
@@ -42,6 +46,7 @@ async function renderContas() {
     setupFormConta();
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Contas] Erro ao renderizar:', err);
     showToast('Erro ao carregar contas.', 'error');
   }
@@ -227,8 +232,11 @@ function abrirFormConta() {
  * @param {number} id
  */
 async function editarConta(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const conta = await dbGet('contas', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (!conta) { showToast('Conta não encontrada.', 'error'); return; }
 
     setElContas('modalContaTitulo', 'Editar Conta');
@@ -246,6 +254,7 @@ async function editarConta(id) {
 
     openModal('modalConta');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao carregar conta.', 'error');
   }
 }
@@ -254,6 +263,8 @@ async function editarConta(id) {
  * Salva a conta (insert ou update).
  */
 async function salvarConta() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   // Coleta valores do formulário
   const id               = document.getElementById('contaId')?.value;
   const nome             = (document.getElementById('contaNome')?.value || '').trim();
@@ -294,11 +305,15 @@ async function salvarConta() {
 
   try {
     await dbPut('contas', conta);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalConta');
     await renderContas();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Conta atualizada com sucesso!' : 'Conta criada com sucesso!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Contas] Erro ao salvar:', err);
     showToast('Erro ao salvar a conta.', 'error');
   }
@@ -312,12 +327,18 @@ function excluirConta(id) {
   showConfirm(
     'Deseja excluir esta conta? O histórico de pagamentos será mantido.',
     async () => {
+      const sessionEpoch = appSessionEpoch;
+      if (!isCurrentAppSession(sessionEpoch)) return;
       try {
         await dbDelete('contas', id);
+        if (!isCurrentAppSession(sessionEpoch)) return;
         await renderContas();
+        if (!isCurrentAppSession(sessionEpoch)) return;
         await renderDashboard();
+        if (!isCurrentAppSession(sessionEpoch)) return;
         showToast('Conta excluída.');
       } catch (err) {
+        if (!isCurrentAppSession(sessionEpoch)) return;
         showToast('Erro ao excluir a conta.', 'error');
       }
     }
@@ -329,8 +350,11 @@ function excluirConta(id) {
  * @param {number} id
  */
 async function duplicarConta(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const conta = await dbGet('contas', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (!conta) return;
 
     const copia = { ...conta };
@@ -339,9 +363,12 @@ async function duplicarConta(id) {
     copia.dataCriacao = new Date().toISOString().split('T')[0];
 
     await dbAdd('contas', copia);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     await renderContas();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Conta duplicada com sucesso!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao duplicar a conta.', 'error');
   }
 }
@@ -355,8 +382,11 @@ async function duplicarConta(id) {
  * @param {number} contaId
  */
 async function abrirModalPagamento(contaId) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const conta = await dbGet('contas', contaId);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (!conta) return;
 
     const mes  = getCurrentMonth();
@@ -379,9 +409,12 @@ async function abrirModalPagamento(contaId) {
     // Atribui handler direto (evita empilhar listeners)
     const btnSalvar = document.getElementById('btnSalvarPagamento');
     if (btnSalvar) {
-      btnSalvar.onclick = () => salvarPagamento(contaId);
+      btnSalvar.onclick = () => {
+        if (isCurrentAppSession(sessionEpoch)) return salvarPagamento(contaId);
+      };
     }
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao abrir pagamento.', 'error');
   }
 }
@@ -392,6 +425,8 @@ async function abrirModalPagamento(contaId) {
  * @param {number} contaId
  */
 async function salvarPagamento(contaId) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const valorPago     = parseFloat(document.getElementById('pagValorPago')?.value) || 0;
   const dataPagamento = document.getElementById('pagDataPagamento')?.value || '';
   const mesReferencia = document.getElementById('pagMesReferencia')?.value || '';
@@ -405,28 +440,35 @@ async function salvarPagamento(contaId) {
   try {
     // Verifica pagamento existente para o mesmo mês (evita duplicata)
     const existente = await dbGetPagamentoPorContaMes(contaId, mesReferencia);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     const pagamento = { contaId, mesReferencia, valorPago, dataPagamento };
     if (existente) pagamento.id = existente.id; // update
 
     await dbPut('pagamentos', pagamento);
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // Para contas parceladas: decrementa parcelas restantes
     const conta = await dbGet('contas', contaId);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (conta && !conta.fixa && conta.parcelasRestantes > 0) {
       conta.parcelasRestantes -= 1;
       if (conta.parcelasRestantes === 0) {
         conta.ativa = false; // Encerra automaticamente
       }
       await dbPut('contas', conta);
+      if (!isCurrentAppSession(sessionEpoch)) return;
     }
 
     closeModal('modalPagamento');
     await renderContas();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // Informa economia ou acréscimo
     const parcela  = (await dbGet('contas', contaId))?.valorParcela || 0;
+    if (!isCurrentAppSession(sessionEpoch)) return;
     const economia = parcela - valorPago;
     if (economia > 0) {
       showToast(`Pagamento registrado! Você economizou ${formatCurrency(economia)} 🎉`);
@@ -437,6 +479,7 @@ async function salvarPagamento(contaId) {
     }
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Contas] Erro ao salvar pagamento:', err);
     showToast('Erro ao registrar pagamento.', 'error');
   }

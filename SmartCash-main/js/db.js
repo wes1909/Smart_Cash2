@@ -1,324 +1,307 @@
-/**
- * SmartCash — db.js
- * Módulo de Banco de Dados (IndexedDB)
- * -----------------------------------------------
- * Gerencia todas as operações CRUD via IndexedDB.
- * Expõe funções assíncronas baseadas em Promise
- * para uso pelos demais módulos da aplicação.
- */
-
+﻿/** SmartCash — adaptador Supabase; objetos camelCase e IDs numéricos. */
 'use strict';
 
-// ============================================================
-// CONSTANTES
-// ============================================================
-const DB_NAME    = 'smartcashDB';
-const DB_VERSION = 2;
-
-/** Referência global à instância do banco */
-let db = null;
-
-// ============================================================
-// INICIALIZAÇÃO
-// ============================================================
-
-/**
- * Abre (ou cria) o banco de dados IndexedDB.
- * Cria todos os object stores necessários no `onupgradeneeded`.
- * @returns {Promise<IDBDatabase>}
- */
-function initDB() {
-  return new Promise((resolve, reject) => {
-
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    // Executado quando o banco é criado ou atualizado
-    request.onupgradeneeded = (event) => {
-      const idb = event.target.result;
-
-      // ── configuracoes ──────────────────────────────────────
-      if (!idb.objectStoreNames.contains('configuracoes')) {
-        idb.createObjectStore('configuracoes', { keyPath: 'id' });
-      }
-
-      // ── contas ─────────────────────────────────────────────
-      if (!idb.objectStoreNames.contains('contas')) {
-        const s = idb.createObjectStore('contas', { keyPath: 'id', autoIncrement: true });
-        s.createIndex('ativa',    'ativa',    { unique: false });
-        s.createIndex('categoria','categoria',{ unique: false });
-      }
-
-      // ── pagamentos ─────────────────────────────────────────
-      if (!idb.objectStoreNames.contains('pagamentos')) {
-        const s = idb.createObjectStore('pagamentos', { keyPath: 'id', autoIncrement: true });
-        s.createIndex('contaId',      'contaId',      { unique: false });
-        s.createIndex('mesReferencia','mesReferencia',{ unique: false });
-      }
-
-      // ── gastos ─────────────────────────────────────────────
-      if (!idb.objectStoreNames.contains('gastos')) {
-        const s = idb.createObjectStore('gastos', { keyPath: 'id', autoIncrement: true });
-        s.createIndex('data',  'data',  { unique: false });
-        s.createIndex('semana','semana',{ unique: false });
-      }
-
-      // ── ganhos ─────────────────────────────────────────────
-      // Lançamentos de renda: cada entrada de dinheiro recebido
-      // (salário, bico, freelance, etc.), com data e valor próprios.
-      if (!idb.objectStoreNames.contains('ganhos')) {
-        const s = idb.createObjectStore('ganhos', { keyPath: 'id', autoIncrement: true });
-        s.createIndex('data', 'data', { unique: false });
-      }
-
-      // ── dividas ────────────────────────────────────────────
-      if (!idb.objectStoreNames.contains('dividas')) {
-        idb.createObjectStore('dividas', { keyPath: 'id', autoIncrement: true });
-      }
-
-      // ── investimentos ──────────────────────────────────────
-      if (!idb.objectStoreNames.contains('investimentos')) {
-        idb.createObjectStore('investimentos', { keyPath: 'id', autoIncrement: true });
-      }
-
-      // ── reservas ───────────────────────────────────────────
-      if (!idb.objectStoreNames.contains('reservas')) {
-        const s = idb.createObjectStore('reservas', { keyPath: 'id', autoIncrement: true });
-        s.createIndex('mesReferencia','mesReferencia',{ unique: false });
-      }
-    };
-
-    request.onsuccess = (event) => {
-      db = event.target.result;
-      resolve(db);
-    };
-
-    request.onerror = (event) => {
-      console.error('[DB] Erro ao abrir banco:', event.target.error);
-      reject(event.target.error);
-    };
-  });
-}
-
-// ============================================================
-// OPERAÇÕES GENÉRICAS
-// ============================================================
-
-/**
- * Retorna todos os registros de um store.
- * @param {string} storeName
- * @returns {Promise<Array>}
- */
-function dbGetAll(storeName) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(storeName, 'readonly');
-    const st  = tx.objectStore(storeName);
-    const req = st.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-/**
- * Retorna um registro pelo ID.
- * @param {string} storeName
- * @param {number|string} id
- * @returns {Promise<Object|undefined>}
- */
-function dbGet(storeName, id) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(storeName, 'readonly');
-    const st  = tx.objectStore(storeName);
-    const req = st.get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-/**
- * Insere ou atualiza um registro (usa `put` — upsert).
- * Se o objeto tiver `id`, atualiza; caso contrário, insere.
- * @param {string} storeName
- * @param {Object} data
- * @returns {Promise<number>} ID do registro
- */
-function dbPut(storeName, data) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(storeName, 'readwrite');
-    const st  = tx.objectStore(storeName);
-    const req = st.put(data);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-/**
- * Insere um novo registro (sem ID — usa `add`).
- * @param {string} storeName
- * @param {Object} data
- * @returns {Promise<number>} ID gerado
- */
-function dbAdd(storeName, data) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(storeName, 'readwrite');
-    const st  = tx.objectStore(storeName);
-    const req = st.add(data);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-/**
- * Remove um registro pelo ID.
- * @param {string} storeName
- * @param {number|string} id
- * @returns {Promise<void>}
- */
-function dbDelete(storeName, id) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(storeName, 'readwrite');
-    const st  = tx.objectStore(storeName);
-    const req = st.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-// ============================================================
-// OPERAÇÕES ESPECÍFICAS
-// ============================================================
-
-/**
- * Busca o pagamento de uma conta num determinado mês.
- * @param {number} contaId
- * @param {string} mesReferencia  Formato: "YYYY-MM"
- * @returns {Promise<Object|null>}
- */
-function dbGetPagamentoPorContaMes(contaId, mesReferencia) {
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction('pagamentos', 'readonly');
-    const st    = tx.objectStore('pagamentos');
-    const index = st.index('contaId');
-    const req   = index.getAll(contaId);
-
-    req.onsuccess = () => {
-      const found = (req.result || []).find(p => p.mesReferencia === mesReferencia) || null;
-      resolve(found);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Busca todos os pagamentos de um determinado mês.
- * @param {string} mesReferencia  Formato: "YYYY-MM"
- * @returns {Promise<Array>}
- */
-function dbGetPagamentosPorMes(mesReferencia) {
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction('pagamentos', 'readonly');
-    const st    = tx.objectStore('pagamentos');
-    const index = st.index('mesReferencia');
-    const req   = index.getAll(mesReferencia);
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-/**
- * Busca todos os gastos de um determinado mês (filtra pela data).
- * @param {string} mesReferencia  Formato: "YYYY-MM"
- * @returns {Promise<Array>}
- */
-function dbGetGastosPorMes(mesReferencia) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction('gastos', 'readonly');
-    const st  = tx.objectStore('gastos');
-    const req = st.getAll();
-
-    req.onsuccess = () => {
-      const todos    = req.result || [];
-      const filtrado = todos.filter(g => g.data && g.data.startsWith(mesReferencia));
-      resolve(filtrado);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Busca todos os ganhos (renda) de um determinado mês (filtra pela data).
- * @param {string} mesReferencia  Formato: "YYYY-MM"
- * @returns {Promise<Array>}
- */
-function dbGetGanhosPorMes(mesReferencia) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction('ganhos', 'readonly');
-    const st  = tx.objectStore('ganhos');
-    const req = st.getAll();
-
-    req.onsuccess = () => {
-      const todos    = req.result || [];
-      const filtrado = todos.filter(g => g.data && g.data.startsWith(mesReferencia));
-      resolve(filtrado);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// ============================================================
-// UTILITÁRIOS DE MASSA
-// ============================================================
-
-/** Lista de todos os stores do banco */
 const ALL_STORES = [
-  'configuracoes', 'contas', 'pagamentos',
-  'gastos', 'ganhos', 'dividas', 'investimentos', 'reservas'
+  'configuracoes', 'contas', 'pagamentos', 'gastos',
+  'ganhos', 'dividas', 'investimentos', 'reservas'
 ];
 
-/**
- * Limpa todos os dados de todos os stores.
- * @returns {Promise<void>}
- */
-function dbClearAll() {
-  const promises = ALL_STORES.map(storeName => {
-    return new Promise((resolve, reject) => {
-      const tx  = db.transaction(storeName, 'readwrite');
-      const st  = tx.objectStore(storeName);
-      const req = st.clear();
-      req.onsuccess = () => resolve();
-      req.onerror   = () => reject(req.error);
-    });
-  });
-  return Promise.all(promises);
+// Auxiliares encapsulados; as 13 funções públicas permanecem abaixo.
+const financialDB = (() => {
+  const schemas = {
+    configuracoes: {
+      limiteSemanal: 'limite_semanal', tema: 'tema', moeda: 'moeda',
+      lastProcessedMonth: 'last_processed_month'
+    },
+    contas: {
+      nome: 'nome', categoria: 'categoria', valorParcela: 'valor_parcela',
+      fixa: 'fixa', parcelasTotais: 'parcelas_totais',
+      parcelasRestantes: 'parcelas_restantes', ativa: 'ativa', dataCriacao: 'data_criacao'
+    },
+    pagamentos: {
+      contaId: 'conta_id', mesReferencia: 'mes_referencia',
+      valorPago: 'valor_pago', dataPagamento: 'data_pagamento'
+    },
+    gastos: { data: 'data', descricao: 'descricao', categoria: 'categoria', semana: 'semana', valor: 'valor' },
+    ganhos: { data: 'data', descricao: 'descricao', categoria: 'categoria', valor: 'valor' },
+    dividas: { nome: 'nome', saldoAtual: 'saldo_atual', jurosMensal: 'juros_mensal', parcelaMinima: 'parcela_minima' },
+    investimentos: {
+      nome: 'nome', saldoInicial: 'saldo_inicial', aporteMensal: 'aporte_mensal',
+      rentabilidadeMensal: 'rentabilidade_mensal'
+    },
+    reservas: { mesReferencia: 'mes_referencia', valorGuardado: 'valor_guardado' }
+  };
+  const numeric = new Set([
+    'limiteSemanal', 'valorParcela', 'parcelasTotais', 'parcelasRestantes',
+    'contaId', 'valorPago', 'semana', 'valor', 'saldoAtual', 'jurosMensal',
+    'parcelaMinima', 'saldoInicial', 'aporteMensal', 'rentabilidadeMensal', 'valorGuardado'
+  ]);
+  const nullable = new Set(['parcelasTotais', 'parcelasRestantes', 'contaId']);
+  const pageSize = 500;
+
+  function schema(storeName) {
+    if (!ALL_STORES.includes(storeName)) throw new Error(`Tabela não permitida: ${storeName}`);
+    return schemas[storeName];
+  }
+
+  function id(value) {
+    if ((typeof value !== 'number' && typeof value !== 'string') ||
+        (typeof value === 'string' && !/^\d+$/.test(value))) {
+      throw new Error('ID deve ser um inteiro numérico seguro.');
+    }
+    const result = Number(value);
+    if (!Number.isSafeInteger(result)) throw new Error('ID fora do intervalo seguro do JavaScript.');
+    return result;
+  }
+
+  async function user() {
+    if (typeof supabaseClient === 'undefined') throw new Error('Cliente Supabase indisponível.');
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (!data?.session?.user?.id) throw new Error('É necessário autenticar para acessar os dados.');
+    return data.session.user.id;
+  }
+
+  async function assertUser(userId) {
+    if (await user() !== userId) throw new Error('A sessão mudou durante a operação.');
+  }
+
+  async function execute(query, userId) {
+    await assertUser(userId);
+    const { data, error } = await query;
+    if (error) throw error;
+    await assertUser(userId);
+    return data;
+  }
+
+  function toRow(storeName, data, userId) {
+    const fields = schema(storeName);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Registro inválido.');
+    const row = { user_id: userId };
+    // put substituía o objeto: campos omitidos não devem conservar valores antigos.
+    for (const [js, sql] of Object.entries(fields)) row[sql] = data[js] ?? null;
+    if (storeName === 'configuracoes') {
+      if (data.id != null && id(data.id) !== 1) throw new Error('Configurações devem usar id = 1.');
+      row.id = 1;
+    } else if (data.id != null) row.id = id(data.id);
+    if (row.conta_id != null) row.conta_id = id(row.conta_id);
+    return row;
+  }
+
+  function fromRow(storeName, row) {
+    const result = { id: id(row.id) };
+    for (const [js, sql] of Object.entries(schema(storeName))) {
+      const value = row[sql];
+      if (value == null) result[js] = value;
+      else if (js === 'contaId') result[js] = id(value);
+      else if (numeric.has(js)) {
+        result[js] = Number(value);
+        if (!Number.isFinite(result[js])) throw new Error(`Valor numérico inválido: ${js}`);
+      } else result[js] = value;
+    }
+    return result;
+  }
+
+  function columns(storeName) {
+    return ['id', ...Object.values(schema(storeName))].join(',');
+  }
+
+  async function readAll(storeName, userId, filter = query => query) {
+    const rows = [];
+    // Continua até página vazia, mesmo se o servidor reduzir o tamanho solicitado.
+    for (let offset = 0; ; ) {
+      let query = supabaseClient.from(storeName).select(columns(storeName)).eq('user_id', userId);
+      query = filter(query).order('id', { ascending: true }).range(offset, offset + pageSize - 1);
+      const page = await execute(query, userId);
+      if (!Array.isArray(page)) throw new Error('Resposta de listagem inválida.');
+      if (!page.length) return rows;
+      rows.push(...page.map(row => fromRow(storeName, row)));
+      offset += page.length;
+    }
+  }
+
+  async function write(storeName, data, userId, addOnly = false) {
+    const row = toRow(storeName, data, userId);
+    let query = supabaseClient.from(storeName);
+    query = addOnly || row.id == null
+      ? query.insert(row)
+      : query.upsert(row, { onConflict: storeName === 'configuracoes' ? 'user_id,id' : 'id' });
+    const saved = await execute(query.select('id').eq('user_id', userId).single(), userId);
+    return id(saved.id);
+  }
+
+  async function clear(userId) {
+    // Filhos primeiro; nenhuma operação inclui divida_pagamentos.
+    for (const storeName of ['pagamentos', ...ALL_STORES.filter(name => name !== 'pagamentos')]) {
+      await execute(supabaseClient.from(storeName).delete().eq('user_id', userId), userId);
+    }
+    // Compatibilidade com o Promise.all da versão IndexedDB.
+    return ALL_STORES.map(() => undefined);
+  }
+
+  function monthBounds(month) {
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new Error('Mês de referência deve estar no formato YYYY-MM.');
+    }
+    const [year, number] = month.split('-').map(Number);
+    const next = number === 12
+      ? `${String(year + 1).padStart(4, '0')}-01`
+      : `${String(year).padStart(4, '0')}-${String(number + 1).padStart(2, '0')}`;
+    return [month + '-01', next + '-01'];
+  }
+
+  function validDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(value + 'T00:00:00Z');
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+
+  function validateBackup(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data) ||
+        !ALL_STORES.some(name => Array.isArray(data[name]))) throw new Error('Backup inválido.');
+    const prepared = {};
+    for (const storeName of ALL_STORES) {
+      const records = data[storeName] === undefined ? [] : data[storeName];
+      if (!Array.isArray(records)) throw new Error(`Lista inválida no backup: ${storeName}`);
+      if (storeName === 'configuracoes' && records.length > 1) throw new Error('Backup contém configurações duplicadas.');
+      const seen = new Set();
+      prepared[storeName] = records.map(record => {
+        const row = toRow(storeName, record, '');
+        if (record.id != null) {
+          const oldId = id(record.id);
+          if (seen.has(oldId)) throw new Error(`ID duplicado no backup: ${storeName}/${oldId}`);
+          seen.add(oldId);
+        } else if (storeName === 'contas') throw new Error('Conta sem ID no backup.');
+        const copy = {};
+        for (const [js, sql] of Object.entries(schema(storeName))) {
+          const value = row[sql];
+          if (value == null && nullable.has(js)) copy[js] = null;
+          else if (numeric.has(js)) {
+            if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Número inválido: ${storeName}.${js}`);
+            if (['parcelasTotais', 'parcelasRestantes', 'semana'].includes(js) && !Number.isInteger(value)) {
+              throw new Error(`Inteiro inválido: ${storeName}.${js}`);
+            }
+            copy[js] = value;
+          } else if (js === 'fixa' || js === 'ativa') {
+            if (typeof value !== 'boolean') throw new Error(`Booleano inválido: ${storeName}.${js}`);
+            copy[js] = value;
+          } else {
+            if (typeof value !== 'string') throw new Error(`Texto inválido: ${storeName}.${js}`);
+            if (js === 'mesReferencia') monthBounds(value);
+            if (['data', 'dataCriacao', 'dataPagamento'].includes(js) && !validDate(value)) {
+              throw new Error(`Data inválida: ${storeName}.${js}`);
+            }
+            copy[js] = value;
+          }
+        }
+        // IDs antigos servem apenas para o mapa; nunca são gravados nas tabelas financeiras.
+        return { oldId: record.id == null ? null : id(record.id), data: copy };
+      });
+    }
+    return prepared;
+  }
+
+  return { schema, id, user, execute, columns, fromRow, readAll, write, clear, monthBounds, validateBackup };
+})();
+
+/** Inicializa o adaptador; o chamador atual apenas aguarda sua conclusão. */
+async function initDB() {
+  await financialDB.user();
+  return supabaseClient;
 }
 
-/**
- * Exporta todos os dados do banco em um objeto JSON.
- * @returns {Promise<Object>}
- */
+/** @returns {Promise<Array>} */
+async function dbGetAll(storeName) {
+  financialDB.schema(storeName);
+  return financialDB.readAll(storeName, await financialDB.user());
+}
+
+/** @returns {Promise<Object|undefined>} */
+async function dbGet(storeName, id) {
+  financialDB.schema(storeName);
+  const userId = await financialDB.user();
+  const row = await financialDB.execute(
+    supabaseClient.from(storeName).select(financialDB.columns(storeName))
+      .eq('user_id', userId).eq('id', financialDB.id(id)).maybeSingle(), userId
+  );
+  return row ? financialDB.fromRow(storeName, row) : undefined;
+}
+
+/** Insere ou substitui os campos financeiros. @returns {Promise<number>} */
+async function dbPut(storeName, data) {
+  return financialDB.write(storeName, data, await financialDB.user());
+}
+
+/** Insere exclusivamente; chaves duplicadas rejeitam. @returns {Promise<number>} */
+async function dbAdd(storeName, data) {
+  return financialDB.write(storeName, data, await financialDB.user(), true);
+}
+
+/** A FK ON DELETE SET NULL preserva pagamentos ao excluir contas. @returns {Promise<void>} */
+async function dbDelete(storeName, id) {
+  financialDB.schema(storeName);
+  const userId = await financialDB.user();
+  await financialDB.execute(
+    supabaseClient.from(storeName).delete().eq('user_id', userId).eq('id', financialDB.id(id)), userId
+  );
+}
+
+/** @returns {Promise<Object|null>} */
+async function dbGetPagamentoPorContaMes(contaId, mesReferencia) {
+  const userId = await financialDB.user();
+  const row = await financialDB.execute(
+    supabaseClient.from('pagamentos').select(financialDB.columns('pagamentos'))
+      .eq('user_id', userId).eq('conta_id', financialDB.id(contaId))
+      .eq('mes_referencia', mesReferencia).order('id', { ascending: true }).limit(1).maybeSingle(), userId
+  );
+  return row ? financialDB.fromRow('pagamentos', row) : null;
+}
+
+/** @returns {Promise<Array>} */
+async function dbGetPagamentosPorMes(mesReferencia) {
+  return financialDB.readAll('pagamentos', await financialDB.user(), query => query.eq('mes_referencia', mesReferencia));
+}
+
+/** Datas SQL são comparadas sem conversão de fuso. @returns {Promise<Array>} */
+async function dbGetGastosPorMes(mesReferencia) {
+  const [start, end] = financialDB.monthBounds(mesReferencia);
+  return financialDB.readAll('gastos', await financialDB.user(), query => query.gte('data', start).lt('data', end));
+}
+
+/** @returns {Promise<Array>} */
+async function dbGetGanhosPorMes(mesReferencia) {
+  const [start, end] = financialDB.monthBounds(mesReferencia);
+  return financialDB.readAll('ganhos', await financialDB.user(), query => query.gte('data', start).lt('data', end));
+}
+
+/** Limpa exclusivamente as oito tabelas do usuário atual. */
+async function dbClearAll() {
+  return financialDB.clear(await financialDB.user());
+}
+
+/** @returns {Promise<Object>} */
 async function dbExportAll() {
+  const userId = await financialDB.user();
   const data = {};
-  for (const storeName of ALL_STORES) {
-    data[storeName] = await dbGetAll(storeName);
-  }
+  for (const storeName of ALL_STORES) data[storeName] = await financialDB.readAll(storeName, userId);
   return data;
 }
 
-/**
- * Importa dados para o banco (substitui tudo via `put`).
- * @param {Object} data  Objeto com chaves = nome do store
- * @returns {Promise<void>}
- */
+/** Valida antes da limpeza, gera novos IDs e remapeia contaId. @returns {Promise<void>} */
 async function dbImportAll(data) {
-  await dbClearAll();
-
-  for (const storeName of ALL_STORES) {
-    const registros = data[storeName] || [];
-    for (const item of registros) {
-      try {
-        await dbPut(storeName, item);
-      } catch (err) {
-        console.warn(`[DB] Erro ao importar ${storeName}:`, err);
-      }
+  const userId = await financialDB.user();
+  const prepared = financialDB.validateBackup(data);
+  await financialDB.clear(userId);
+  const accountIds = new Map();
+  for (const item of prepared.contas) {
+    accountIds.set(item.oldId, await financialDB.write('contas', item.data, userId, true));
+  }
+  for (const storeName of ALL_STORES.filter(name => name !== 'contas')) {
+    for (const item of prepared[storeName]) {
+      const record = { ...item.data };
+      if (storeName === 'pagamentos') record.contaId = accountIds.get(record.contaId) ?? null;
+      if (storeName === 'configuracoes') record.id = 1;
+      await financialDB.write(storeName, record, userId, true);
     }
   }
 }

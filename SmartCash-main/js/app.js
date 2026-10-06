@@ -17,19 +17,23 @@
 // ESTADO GLOBAL
 // ============================================================
 
-const AppState = {
-  currentScreen: 'dashboard',
-  currentMonth:  '',
+function createDefaultAppState() {
+  return {
+    currentScreen: 'dashboard',
+    currentMonth:  '',
 
-  /** Configurações carregadas do banco */
-  config: {
-    id:             1,
-    limiteSemanal:  0,
-    tema:           'dark',
-    moeda:          'BRL',
-    lastProcessedMonth: ''
-  }
-};
+    /** Configurações carregadas do banco */
+    config: {
+      id:             1,
+      limiteSemanal:  0,
+      tema:           'dark',
+      moeda:          'BRL',
+      lastProcessedMonth: ''
+    }
+  };
+}
+
+const AppState = createDefaultAppState();
 
 // ============================================================
 // INICIALIZAÇÃO
@@ -40,24 +44,66 @@ const AppState = {
  * Chamado pela autenticação após confirmar uma sessão.
  */
 let appInitialization = null;
+let appUserId = null;
+let appSessionEpoch = 0;
+let appInitialMarkup = null;
+const appSessionCleanups = new Set();
+
+function isCurrentAppSession(epoch) {
+  return appUserId !== null && epoch === appSessionEpoch;
+}
+
+// Arquivos e temporizadores pendentes também pertencem à sessão que os criou.
+function registerAppSessionCleanup(cleanup) {
+  appSessionCleanups.add(cleanup);
+  return () => appSessionCleanups.delete(cleanup);
+}
+
+function resetAppSession() {
+  const app = document.getElementById('appContainer');
+  app.hidden = true; // Oculta antes de destruir qualquer estado do usuário.
+  if (appInitialMarkup === null) appInitialMarkup = app.innerHTML;
+  appSessionEpoch += 1;
+  appUserId = null;
+  appInitialization = null;
+  for (const cleanup of appSessionCleanups) cleanup();
+  appSessionCleanups.clear();
+  resetDashboardState();
+  _confirmCallback = null;
+  for (const key of Object.keys(AppState)) delete AppState[key];
+  Object.assign(AppState, createDefaultAppState());
+  // Remove listas, formulários, filtros, modais e listeners que capturam IDs antigos.
+  // O contêiner raiz permanece; somente seu conteúdo volta ao HTML inicial.
+  app.innerHTML = appInitialMarkup;
+  document.getElementById('toastContainer').replaceChildren();
+  applyTheme(AppState.config.tema);
+}
 
 function initApp(session) {
   if (!session || !session.user) {
     return Promise.reject(new Error('É necessário autenticar antes de iniciar o SmartCash.'));
   }
-  // Mantém inclusive falhas: repetir uma inicialização parcial duplicaria eventos.
+  if (appUserId !== session.user.id) {
+    resetAppSession();
+    appUserId = session.user.id;
+  }
+  // Uma inicialização por usuário/sessão; renovação de token reutiliza a promessa.
   if (!appInitialization) appInitialization = initializeApp();
   return appInitialization;
 }
 
 async function initializeApp() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     // 1. Abre o banco de dados
     await initDB();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.log('[SmartCash] Banco de dados pronto.');
 
     // 2. Carrega configurações salvas
     await loadConfig();
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // 3. Define o mês atual no estado global
     const now = new Date();
@@ -75,9 +121,11 @@ async function initializeApp() {
 
     // 7. Verifica se há virada de mês a processar
     await checkMonthRollover();
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // 8. Carrega a tela inicial (dashboard)
     await navigateTo('dashboard');
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // 9. Registra o Service Worker (PWA)
     registerServiceWorker();
@@ -85,8 +133,10 @@ async function initializeApp() {
     console.log('[SmartCash] Aplicação inicializada com sucesso.');
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[SmartCash] Erro crítico na inicialização:', err);
     showToast('Erro ao inicializar o sistema. Recarregue a página.', 'error', 6000);
+    throw err;
   }
 }
 
@@ -99,14 +149,19 @@ async function initializeApp() {
  * Se não existirem, cria o registro padrão.
  */
 async function loadConfig() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const saved = await dbGet('configuracoes', 1);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (saved) {
       AppState.config = { ...AppState.config, ...saved };
     } else {
       await dbPut('configuracoes', AppState.config);
+      if (!isCurrentAppSession(sessionEpoch)) return;
     }
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.warn('[SmartCash] Usando configurações padrão:', err);
   }
 }
@@ -115,8 +170,11 @@ async function loadConfig() {
  * Persiste as configurações no banco.
  */
 async function saveConfig() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   AppState.config.id = 1; // Garante ID fixo
   await dbPut('configuracoes', AppState.config);
+  if (!isCurrentAppSession(sessionEpoch)) return;
 }
 
 // ============================================================
@@ -164,6 +222,8 @@ function setupNavigation() {
  * @param {string} screen  ID da tela (ex: 'dashboard')
  */
 async function navigateTo(screen) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   AppState.currentScreen = screen;
 
   // Atualiza estado ativo na sidebar e bottom nav
@@ -189,6 +249,7 @@ async function navigateTo(screen) {
 
   // Carrega dados da tela
   await loadScreen(screen);
+  if (!isCurrentAppSession(sessionEpoch)) return;
 }
 
 /**
@@ -196,6 +257,8 @@ async function navigateTo(screen) {
  * @param {string} screen
  */
 async function loadScreen(screen) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const loaders = {
     dashboard:     renderDashboard,
     contas:        renderContas,
@@ -206,6 +269,7 @@ async function loadScreen(screen) {
   };
   if (loaders[screen]) {
     await loaders[screen]();
+    if (!isCurrentAppSession(sessionEpoch)) return;
   }
 }
 
@@ -242,12 +306,16 @@ function applyTheme(tema) {
  * Alterna entre dark e light e salva a preferência.
  */
 async function toggleTheme() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   AppState.config.tema = AppState.config.tema === 'dark' ? 'light' : 'dark';
   applyTheme(AppState.config.tema);
   await saveConfig();
+  if (!isCurrentAppSession(sessionEpoch)) return;
   // Atualiza gráficos do dashboard se estiver nele
   if (AppState.currentScreen === 'dashboard') {
     await renderDashboard();
+    if (!isCurrentAppSession(sessionEpoch)) return;
   }
 }
 
@@ -301,13 +369,17 @@ function closeModal(modalId) {
  * Se não foi, processa a virada de mês.
  */
 async function checkMonthRollover() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const currentMonth  = AppState.currentMonth;
   const lastProcessed = AppState.config.lastProcessedMonth || '';
 
   if (lastProcessed !== currentMonth) {
     await processMonthRollover(currentMonth);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     AppState.config.lastProcessedMonth = currentMonth;
     await saveConfig();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.log(`[SmartCash] Mês processado: ${currentMonth}`);
   }
 }
@@ -319,7 +391,10 @@ async function checkMonthRollover() {
  * @param {string} currentMonth  Formato "YYYY-MM"
  */
 async function processMonthRollover(currentMonth) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const contas = await dbGetAll('contas');
+  if (!isCurrentAppSession(sessionEpoch)) return;
 
   for (const conta of contas) {
     // Ignora contas já encerradas
@@ -329,6 +404,7 @@ async function processMonthRollover(currentMonth) {
     if (!conta.fixa && conta.parcelasRestantes !== null && conta.parcelasRestantes <= 0) {
       conta.ativa = false;
       await dbPut('contas', conta);
+      if (!isCurrentAppSession(sessionEpoch)) return;
     }
   }
 }
@@ -471,6 +547,8 @@ function updateMonthBadge() {
  * @param {number}  duration   Duração em ms (padrão: 3000)
  */
 function showToast(message, type = 'success', duration = 3000) {
+  if (appUserId === null) return;
+  const epoch = appSessionEpoch;
   const container = document.getElementById('toastContainer');
   if (!container) return;
 
@@ -486,14 +564,24 @@ function showToast(message, type = 'success', duration = 3000) {
 
   // Animação de entrada
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => toast.classList.add('visible'));
+    if (isCurrentAppSession(epoch)) {
+      requestAnimationFrame(() => {
+        if (isCurrentAppSession(epoch)) toast.classList.add('visible');
+      });
+    }
   });
 
   // Remove após a duração
-  setTimeout(() => {
+  let removeTimer;
+  const hideTimer = setTimeout(() => {
     toast.classList.remove('visible');
-    setTimeout(() => toast.remove(), 350);
+    removeTimer = setTimeout(() => { toast.remove(); unregister(); }, 350);
   }, duration);
+  const unregister = registerAppSessionCleanup(() => {
+    clearTimeout(hideTimer);
+    clearTimeout(removeTimer);
+    toast.remove();
+  });
 }
 
 // ============================================================
@@ -509,17 +597,23 @@ let _confirmCallback = null;
  * @param {Function} callback  Executado se confirmar
  */
 function showConfirm(message, callback) {
+  if (appUserId === null) return;
+  const epoch = appSessionEpoch;
   document.getElementById('confirmMessage').textContent = message;
-  _confirmCallback = callback;
+  _confirmCallback = () => {
+    if (isCurrentAppSession(epoch)) return callback();
+  };
   openModal('modalConfirm');
 
   document.getElementById('btnConfirmOk').onclick = () => {
+    if (!isCurrentAppSession(epoch)) return;
     closeModal('modalConfirm');
     if (_confirmCallback) _confirmCallback();
     _confirmCallback = null;
   };
 
   document.getElementById('btnConfirmCancel').onclick = () => {
+    if (!isCurrentAppSession(epoch)) return;
     closeModal('modalConfirm');
     _confirmCallback = null;
   };

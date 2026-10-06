@@ -20,6 +20,8 @@
  * Renderiza a tela de Configurações.
  */
 async function renderConfiguracoes() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const config = AppState.config;
 
@@ -32,6 +34,7 @@ async function renderConfiguracoes() {
     setupExportarImportar();
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Config] Erro ao renderizar:', err);
     showToast('Erro ao carregar configurações.', 'error');
   }
@@ -66,19 +69,24 @@ function setupFormConfig() {
  * Salva as configurações financeiras no banco.
  */
 async function salvarConfiguracoes() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const moeda = document.getElementById('cfgMoeda')?.value || 'BRL';
 
   AppState.config.moeda = moeda;
 
   try {
     await saveConfig();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Configurações salvas com sucesso! ✅');
 
     // Recarrega o dashboard com os novos valores
     if (AppState.currentScreen === 'dashboard') {
       await renderDashboard();
+      if (!isCurrentAppSession(sessionEpoch)) return;
     }
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Config] Erro ao salvar:', err);
     showToast('Erro ao salvar configurações.', 'error');
   }
@@ -88,14 +96,18 @@ async function salvarConfiguracoes() {
  * Aplica e salva o tema selecionado.
  */
 async function salvarTema() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const tema = document.getElementById('cfgTema')?.value || 'dark';
   AppState.config.tema = tema;
   applyTheme(tema);
 
   try {
     await saveConfig();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Tema aplicado com sucesso!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao salvar tema.', 'error');
   }
 }
@@ -107,11 +119,14 @@ function confirmarLimparDados() {
   showConfirm(
     '⚠️ ATENÇÃO: Esta ação vai apagar TODOS os dados permanentemente. Não há como desfazer. Deseja continuar?',
     async () => {
+      const sessionEpoch = appSessionEpoch;
+      if (!isCurrentAppSession(sessionEpoch)) return;
       try {
         const temaAtual = AppState.config.tema;
         const moedaAtual = AppState.config.moeda;
 
         await dbClearAll();
+        if (!isCurrentAppSession(sessionEpoch)) return;
 
         // Reinicia configurações preservando tema e moeda
         AppState.config = {
@@ -123,9 +138,12 @@ function confirmarLimparDados() {
         };
 
         await saveConfig();
+        if (!isCurrentAppSession(sessionEpoch)) return;
         await renderConfiguracoes();
+        if (!isCurrentAppSession(sessionEpoch)) return;
         showToast('Todos os dados foram limpos.', 'info');
       } catch (err) {
+        if (!isCurrentAppSession(sessionEpoch)) return;
         console.error('[Config] Erro ao limpar dados:', err);
         showToast('Erro ao limpar dados.', 'error');
       }
@@ -170,12 +188,16 @@ function setupExportarImportar() {
  * Exporta todos os dados como arquivo JSON.
  */
 async function exportarJSON() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const dados = await dbExportAll();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     const json  = JSON.stringify(dados, null, 2);
     baixarArquivo(json, `smartcash_dados_${getCurrentMonth()}.json`, 'application/json');
     showToast('Dados exportados em JSON! 📤');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao exportar JSON.', 'error');
   }
 }
@@ -186,8 +208,11 @@ async function exportarJSON() {
  * Exporta todas as tabelas como CSV (um bloco por tabela).
  */
 async function exportarCSV() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const dados = await dbExportAll();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     let csv = `SmartCash — Exportação CSV — ${new Date().toLocaleDateString('pt-BR')}\n\n`;
 
     // Contas
@@ -244,6 +269,7 @@ async function exportarCSV() {
     baixarArquivo(csv, `smartcash_relatorio_${getCurrentMonth()}.csv`, 'text/csv;charset=utf-8');
     showToast('Relatório CSV exportado! 📊');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao exportar CSV.', 'error');
   }
 }
@@ -254,8 +280,11 @@ async function exportarCSV() {
  * Exporta backup completo com metadados.
  */
 async function exportarBackup() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const dados = await dbExportAll();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     const backup = JSON.stringify({
       app:     'SmartCash',
       versao:  '1.0.0',
@@ -267,6 +296,7 @@ async function exportarBackup() {
     baixarArquivo(backup, `smartcash_backup_${hoje}.json`, 'application/json');
     showToast('Backup exportado com sucesso! 💾');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao exportar backup.', 'error');
   }
 }
@@ -276,12 +306,20 @@ async function exportarBackup() {
  * @param {Event} event
  */
 function importarBackup(event) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const file = event.target.files?.[0];
   if (!file) return;
 
   const reader = new FileReader();
+  const unregisterReader = registerAppSessionCleanup(() => {
+    reader.onload = reader.onerror = null;
+    if (reader.readyState === 1) reader.abort();
+  });
 
   reader.onload = async e => {
+    unregisterReader();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     try {
       const conteudo = JSON.parse(e.target.result);
 
@@ -300,13 +338,19 @@ function importarBackup(event) {
       showConfirm(
         'Importar backup substituirá TODOS os dados atuais. Deseja continuar?',
         async () => {
+          const sessionEpoch = appSessionEpoch;
+          if (!isCurrentAppSession(sessionEpoch)) return;
           try {
             await dbImportAll(dados);
+            if (!isCurrentAppSession(sessionEpoch)) return;
             await loadConfig();
+            if (!isCurrentAppSession(sessionEpoch)) return;
             applyTheme(AppState.config.tema);
             await renderConfiguracoes();
+            if (!isCurrentAppSession(sessionEpoch)) return;
             showToast('Backup importado com sucesso! ✅');
           } catch (err) {
+            if (!isCurrentAppSession(sessionEpoch)) return;
             console.error('[Config] Erro ao importar:', err);
             showToast('Erro ao importar backup.', 'error');
           }
@@ -314,11 +358,15 @@ function importarBackup(event) {
       );
 
     } catch (_) {
+      if (!isCurrentAppSession(sessionEpoch)) return;
       showToast('Arquivo corrompido ou formato inválido.', 'error');
     }
   };
 
-  reader.onerror = () => showToast('Erro ao ler o arquivo.', 'error');
+  reader.onerror = () => {
+    unregisterReader();
+    if (isCurrentAppSession(sessionEpoch)) showToast('Erro ao ler o arquivo.', 'error');
+  };
   reader.readAsText(file);
 
   // Reseta o input para permitir re-importar o mesmo arquivo

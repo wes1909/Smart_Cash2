@@ -19,8 +19,11 @@
  * Renderiza a tela de Dívidas completa.
  */
 async function renderDividas() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const dividas = await dbGetAll('dividas');
+    if (!isCurrentAppSession(sessionEpoch)) return;
 
     // Calcula crescimento em 12 meses e ordena por prioridade
     const dividasComProjecao = dividas
@@ -45,6 +48,7 @@ async function renderDividas() {
     setupSimulador();
 
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Dívidas] Erro ao renderizar:', err);
     showToast('Erro ao carregar dívidas.', 'error');
   }
@@ -194,10 +198,14 @@ function abrirFormDivida(divida = null) {
  * @param {number} id
  */
 async function editarDivida(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   try {
     const d = await dbGet('dividas', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     if (d) abrirFormDivida(d);
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao carregar dívida.', 'error');
   }
 }
@@ -206,6 +214,8 @@ async function editarDivida(id) {
  * Salva a dívida (insert ou update) após validação.
  */
 async function salvarDivida() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
   const id            = document.getElementById('dividaId')?.value;
   const nome          = (document.getElementById('dividaNome')?.value  || '').trim();
   const saldoAtual    = parseFloat(document.getElementById('dividaSaldo')?.value)   || 0;
@@ -237,10 +247,13 @@ async function salvarDivida() {
 
   try {
     await dbPut('dividas', divida);
+    if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalDivida');
     await renderDividas();
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast(id ? 'Dívida atualizada!' : 'Dívida registrada!');
   } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
     showToast('Erro ao salvar dívida.', 'error');
   }
 }
@@ -253,11 +266,16 @@ function excluirDivida(id) {
   showConfirm(
     'Deseja remover esta dívida? Use esta opção para dívidas quitadas.',
     async () => {
+      const sessionEpoch = appSessionEpoch;
+      if (!isCurrentAppSession(sessionEpoch)) return;
       try {
         await dbDelete('dividas', id);
+        if (!isCurrentAppSession(sessionEpoch)) return;
         await renderDividas();
+        if (!isCurrentAppSession(sessionEpoch)) return;
         showToast('Dívida removida! 🎉');
       } catch (err) {
+        if (!isCurrentAppSession(sessionEpoch)) return;
         showToast('Erro ao remover dívida.', 'error');
       }
     }
