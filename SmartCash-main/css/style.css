@@ -712,6 +712,7 @@ body {
 }
 
 .form-group input,
+.form-group textarea,
 .form-group select {
   padding: 9px 12px;
   background-color: var(--bg-input);
@@ -724,6 +725,7 @@ body {
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 .form-group input:focus,
+.form-group textarea:focus,
 .form-group select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-light);
@@ -755,6 +757,15 @@ body {
 }
 
 .field-error { font-size: 11px; color: var(--danger); min-height: 14px; }
+
+/* Dívidas: amortização e histórico */
+.debt-actions { flex-wrap: wrap; gap: 6px; min-width: 175px; }
+.debt-actions .btn-sm { font-size: 11px; padding: 6px 8px; }
+.debt-balance-summary { display: grid; gap: 10px; }
+.debt-balance-summary strong { display: block; margin-top: 4px; }
+.debt-history-modal { max-width: 680px; }
+.debt-observation { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 300px; }
+.form-group textarea { resize: vertical; font-family: inherit; }
 
 .info-box {
   padding: 10px 14px;

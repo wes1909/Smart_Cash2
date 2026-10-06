@@ -35,7 +35,8 @@ async function renderDividas() {
           : 0;
         return { ...d, vf12, crescimento, pctCrescimento };
       })
-      .sort((a, b) => b.crescimento - a.crescimento); // Maior crescimento = maior prioridade
+      .sort((a, b) => Number(b.saldoAtual > 0) - Number(a.saldoAtual > 0) ||
+        b.crescimento - a.crescimento); // Quitadas após as dívidas ativas.
 
     // Tabela
     renderTabelaDividas(dividasComProjecao);
@@ -75,6 +76,7 @@ function renderTabelaDividas(dividas) {
   tbody.innerHTML = '';
 
   dividas.forEach((d, idx) => {
+    const quitada = d.saldoAtual === 0;
     const prioridade = idx + 1;
 
     // Badge de prioridade
@@ -92,26 +94,28 @@ function renderTabelaDividas(dividas) {
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><span class="badge ${priorityClass}">${priorLabel}</span></td>
+      <td><span class="badge ${quitada ? 'badge-green' : priorityClass}">${quitada ? 'Quitada' : priorLabel}</span></td>
       <td>
         <div class="cell-main">${escHtml(d.nome)}</div>
       </td>
-      <td class="text-danger fw-bold">${formatCurrency(d.saldoAtual)}</td>
+      <td class="${quitada ? 'text-success' : 'text-danger'} fw-bold">${formatCurrency(d.saldoAtual)}</td>
       <td>
         <span class="badge badge-red">${formatNum(d.jurosMensal, 2)}% a.m.</span>
       </td>
       <td>${d.parcelaMinima > 0 ? formatCurrency(d.parcelaMinima) : '—'}</td>
       <td>
-        <div class="cell-main text-danger">${formatCurrency(d.vf12)}</div>
+        <div class="cell-main ${quitada ? 'text-success' : 'text-danger'}">${formatCurrency(d.vf12)}</div>
         <div class="cell-sub">em 12 meses</div>
       </td>
       <td>
-        <span class="text-danger fw-bold">+${formatCurrency(d.crescimento)}</span>
-        <div class="cell-sub text-danger">+${formatNum(d.pctCrescimento, 1)}%</div>
+        <span class="${quitada ? 'text-success' : 'text-danger'} fw-bold">+${formatCurrency(d.crescimento)}</span>
+        <div class="cell-sub ${quitada ? 'text-success' : 'text-danger'}">+${formatNum(d.pctCrescimento, 1)}%</div>
       </td>
-      <td class="actions-cell">
+      <td class="actions-cell debt-actions">
+        ${d.saldoAtual > 0 ? `<button class="btn btn-secondary btn-sm" onclick="abrirAmortizacaoDivida(${d.id})">Amortizar</button>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="abrirHistoricoDivida(${d.id})">Histórico</button>
         <button class="btn-icon" title="Editar" onclick="editarDivida(${d.id})">✏️</button>
-        <button class="btn-icon btn-danger" title="Quitar/Excluir" onclick="excluirDivida(${d.id})">🗑️</button>
+        <button class="btn-icon btn-danger" title="Excluir" onclick="excluirDivida(${d.id})">🗑️</button>
       </td>
     `;
     tbody.appendChild(row);
@@ -132,6 +136,12 @@ function renderRecomendacao(dividas) {
 
   if (dividas.length === 0) {
     el.innerHTML = '';
+    return;
+  }
+
+  dividas = dividas.filter(d => d.saldoAtual > 0);
+  if (!dividas.length) {
+    el.innerHTML = '<p class="text-success">🎉 Todas as dívidas estão quitadas.</p>';
     return;
   }
 
@@ -188,6 +198,7 @@ function abrirFormDivida(divida = null) {
   setValElDiv('dividaId',     divida?.id      != null ? String(divida.id) : '');
   setValElDiv('dividaNome',   divida?.nome    || '');
   setValElDiv('dividaSaldo',  divida?.saldoAtual   != null ? String(divida.saldoAtual)   : '');
+  document.getElementById('dividaSaldo').dataset.saldoOriginal = divida ? String(divida.saldoAtual) : '';
   setValElDiv('dividaJuros',  divida?.jurosMensal  != null ? String(divida.jurosMensal)  : '');
   setValElDiv('dividaParcela',divida?.parcelaMinima != null ? String(divida.parcelaMinima): '');
   openModal('modalDivida');
@@ -218,7 +229,9 @@ async function salvarDivida() {
   if (!isCurrentAppSession(sessionEpoch)) return;
   const id            = document.getElementById('dividaId')?.value;
   const nome          = (document.getElementById('dividaNome')?.value  || '').trim();
-  const saldoAtual    = parseFloat(document.getElementById('dividaSaldo')?.value)   || 0;
+  const saldoInput    = document.getElementById('dividaSaldo');
+  const saldoAtual    = parseFloat(saldoInput?.value);
+  const eraQuitada    = Boolean(id) && saldoInput.dataset.saldoOriginal === '0';
   const jurosMensal   = parseFloat(document.getElementById('dividaJuros')?.value)   || 0;
   const parcelaMinima = parseFloat(document.getElementById('dividaParcela')?.value) || 0;
 
@@ -230,8 +243,8 @@ async function salvarDivida() {
     ok = false;
   } else setElDiv('errDividaNome', '');
 
-  if (!saldoAtual || saldoAtual <= 0) {
-    setElDiv('errDividaSaldo', 'Saldo deve ser maior que zero.');
+  if (!Number.isFinite(saldoAtual) || saldoAtual < 0 || (saldoAtual === 0 && !eraQuitada)) {
+    setElDiv('errDividaSaldo', eraQuitada ? 'Saldo deve ser zero ou positivo.' : 'Saldo deve ser maior que zero.');
     ok = false;
   } else setElDiv('errDividaSaldo', '');
 
@@ -246,6 +259,14 @@ async function salvarDivida() {
   if (id) divida.id = parseInt(id, 10);
 
   try {
+    if (id) {
+      const atual = await dbGet('dividas', Number(id));
+      if (!isCurrentAppSession(sessionEpoch)) return;
+      if (!atual || atual.saldoAtual !== Number(saldoInput.dataset.saldoOriginal)) {
+        showToast('O saldo mudou. Abra a edição novamente antes de salvar.', 'error');
+        return;
+      }
+    }
     await dbPut('dividas', divida);
     if (!isCurrentAppSession(sessionEpoch)) return;
     closeModal('modalDivida');
@@ -259,16 +280,30 @@ async function salvarDivida() {
 }
 
 /**
- * Exclui (ou marca como quitada) uma dívida após confirmação.
+ * Exclui uma dívida sem histórico após confirmação.
  * @param {number} id
  */
-function excluirDivida(id) {
+async function excluirDivida(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
+  const preservedMessage = 'Esta dívida possui histórico de amortizações e deve ser preservada.';
+  try {
+    const historico = await dbGetPagamentosPorDivida(id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
+    if (historico.length) { showToast(preservedMessage, 'info'); return; }
+  } catch (err) {
+    if (isCurrentAppSession(sessionEpoch)) showToast('Erro ao consultar o histórico da dívida.', 'error');
+    return;
+  }
   showConfirm(
-    'Deseja remover esta dívida? Use esta opção para dívidas quitadas.',
+    'Deseja excluir esta dívida?',
     async () => {
       const sessionEpoch = appSessionEpoch;
       if (!isCurrentAppSession(sessionEpoch)) return;
       try {
+        const historico = await dbGetPagamentosPorDivida(id);
+        if (!isCurrentAppSession(sessionEpoch)) return;
+        if (historico.length) { showToast(preservedMessage, 'info'); return; }
         await dbDelete('dividas', id);
         if (!isCurrentAppSession(sessionEpoch)) return;
         await renderDividas();
@@ -276,10 +311,137 @@ function excluirDivida(id) {
         showToast('Dívida removida! 🎉');
       } catch (err) {
         if (!isCurrentAppSession(sessionEpoch)) return;
-        showToast('Erro ao remover dívida.', 'error');
+        showToast(err.code === '23503' ? preservedMessage : 'Erro ao remover dívida.', 'error');
       }
     }
   );
+}
+
+// ============================================================
+// AMORTIZAÇÃO E HISTÓRICO
+// ============================================================
+
+function atualizarSaldoAmortizacao() {
+  const modal = document.getElementById('modalAmortizacaoDivida');
+  const saldo = Number(modal.dataset.saldo);
+  const valor = Number(document.getElementById('amortizacaoValor').value);
+  const valido = Number.isFinite(valor) && valor > 0 && valor <= saldo;
+  // Centavos somente para a prévia visual; a subtração definitiva é feita pela RPC.
+  setElDiv('amortizacaoSaldoPrevisto', valido
+    ? formatCurrency((Math.round(saldo * 100) - Math.round(valor * 100)) / 100) : '—');
+}
+
+async function abrirAmortizacaoDivida(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
+  if (document.getElementById('modalAmortizacaoDivida').dataset.busy === 'true') {
+    showToast('Aguarde a confirmação da amortização em andamento.', 'info');
+    return;
+  }
+  try {
+    const divida = await dbGet('dividas', id);
+    if (!isCurrentAppSession(sessionEpoch)) return;
+    if (!divida) { showToast('Dívida não encontrada.', 'error'); return; }
+    if (divida.saldoAtual <= 0) { showToast('Dívida quitada não pode receber amortização.', 'info'); return; }
+    const modal = document.getElementById('modalAmortizacaoDivida');
+    modal.dataset.dividaId = String(id);
+    modal.dataset.saldo = String(divida.saldoAtual);
+    modal.dataset.busy = '';
+    setElDiv('amortizacaoNome', divida.nome);
+    setElDiv('amortizacaoSaldoAtual', formatCurrency(divida.saldoAtual));
+    const hoje = new Date();
+    setValElDiv('amortizacaoData', `${toMonthString(hoje)}-${String(hoje.getDate()).padStart(2, '0')}`);
+    setValElDiv('amortizacaoValor', '');
+    setValElDiv('amortizacaoObservacao', '');
+    const valorInput = document.getElementById('amortizacaoValor');
+    valorInput.max = String(divida.saldoAtual);
+    valorInput.oninput = atualizarSaldoAmortizacao;
+    const salvar = document.getElementById('btnSalvarAmortizacao');
+    salvar.disabled = false;
+    salvar.onclick = () => {
+      if (isCurrentAppSession(sessionEpoch)) return salvarAmortizacaoDivida();
+    };
+    setElDiv('errAmortizacao', '');
+    atualizarSaldoAmortizacao();
+    openModal('modalAmortizacaoDivida');
+  } catch (err) {
+    if (isCurrentAppSession(sessionEpoch)) showToast('Erro ao carregar dívida.', 'error');
+  }
+}
+
+async function salvarAmortizacaoDivida() {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
+  const modal = document.getElementById('modalAmortizacaoDivida');
+  if (modal.dataset.busy === 'true') return;
+  const id = Number(modal.dataset.dividaId);
+  const saldo = Number(modal.dataset.saldo);
+  const data = document.getElementById('amortizacaoData').value;
+  const valor = Number(document.getElementById('amortizacaoValor').value);
+  const observacao = document.getElementById('amortizacaoObservacao').value.trim();
+  if (!Number.isFinite(valor) || valor <= 0 || valor > saldo || saldo <= 0) {
+    setElDiv('errAmortizacao', 'Informe um valor maior que zero e não superior ao saldo atual.');
+    return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !document.getElementById('amortizacaoData').checkValidity()) {
+    setElDiv('errAmortizacao', 'Informe uma data válida.');
+    return;
+  }
+  if (!document.getElementById('amortizacaoValor').checkValidity()) {
+    setElDiv('errAmortizacao', 'Informe um valor em centavos, sem mais de duas casas decimais.');
+    return;
+  }
+  modal.dataset.busy = 'true';
+  const salvar = document.getElementById('btnSalvarAmortizacao');
+  salvar.disabled = true;
+  setElDiv('errAmortizacao', '');
+  let gravada = false;
+  try {
+    await dbAmortizarDivida(id, data, valor, observacao);
+    if (!isCurrentAppSession(sessionEpoch)) return;
+    gravada = true;
+    closeModal('modalAmortizacaoDivida');
+    await renderDividas();
+    if (!isCurrentAppSession(sessionEpoch)) return;
+    showToast('Amortização registrada com sucesso!');
+  } catch (err) {
+    if (!isCurrentAppSession(sessionEpoch)) return;
+    setElDiv('errAmortizacao', gravada
+      ? 'Amortização registrada. Reabra a tela para atualizar os dados.'
+      : 'Não foi possível confirmar a amortização. Confira o saldo e o histórico antes de tentar novamente.');
+  } finally {
+    if (isCurrentAppSession(sessionEpoch)) {
+      modal.dataset.busy = '';
+      salvar.disabled = false;
+    }
+  }
+}
+
+async function abrirHistoricoDivida(id) {
+  const sessionEpoch = appSessionEpoch;
+  if (!isCurrentAppSession(sessionEpoch)) return;
+  const modal = document.getElementById('modalHistoricoDivida');
+  modal.dataset.dividaId = String(id);
+  setElDiv('historicoDividaNome', 'Carregando...');
+  setElDiv('historicoDividaSaldo', '');
+  const body = document.getElementById('historicoDividaBody');
+  body.innerHTML = '<tr><td colspan="3" class="table-empty">Carregando...</td></tr>';
+  openModal('modalHistoricoDivida');
+  try {
+    const [divida, pagamentos] = await Promise.all([dbGet('dividas', id), dbGetPagamentosPorDivida(id)]);
+    if (!isCurrentAppSession(sessionEpoch) || modal.dataset.dividaId !== String(id)) return;
+    if (!divida) { closeModal('modalHistoricoDivida'); showToast('Dívida não encontrada.', 'error'); return; }
+    setElDiv('historicoDividaNome', divida.nome);
+    setElDiv('historicoDividaSaldo', `Saldo atual: ${formatCurrency(divida.saldoAtual)}`);
+    body.innerHTML = pagamentos.length ? pagamentos.map(p => `
+      <tr><td>${formatDate(p.dataPagamento)}</td><td>${formatCurrency(p.valor)}</td>
+      <td class="debt-observation">${escHtml(p.observacao || '—')}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="table-empty">Nenhuma amortização registrada.</td></tr>';
+  } catch (err) {
+    if (isCurrentAppSession(sessionEpoch) && modal.dataset.dividaId === String(id)) {
+      body.innerHTML = '<tr><td colspan="3" class="table-empty">Erro ao carregar histórico. Feche e tente novamente.</td></tr>';
+    }
+  }
 }
 
 // ============================================================

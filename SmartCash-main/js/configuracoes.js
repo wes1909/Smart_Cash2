@@ -252,6 +252,14 @@ async function exportarCSV() {
       csv += `${d.id},"${d.nome}",${d.saldoAtual},${d.jurosMensal},${d.parcelaMinima || 0}\n`;
     });
 
+    // Histórico de amortizações (sem reaplicar os valores ao saldo).
+    csv += '\nAMORTIZAÇÕES DE DÍVIDAS\n';
+    csv += 'ID,Dívida ID,Data Pagamento,Valor,Observação\n';
+    (dados.divida_pagamentos || []).forEach(p => {
+      const observacao = String(p.observacao || '').replace(/"/g, '""');
+      csv += `${p.id},${p.dividaId},${p.dataPagamento},${p.valor},"${observacao}"\n`;
+    });
+
     // Investimentos
     csv += '\nINVESTIMENTOS\n';
     csv += 'ID,Nome,Saldo Inicial,Aporte Mensal,Rentabilidade Mensal (%)\n';
@@ -287,7 +295,7 @@ async function exportarBackup() {
     if (!isCurrentAppSession(sessionEpoch)) return;
     const backup = JSON.stringify({
       app:     'SmartCash',
-      versao:  '1.0.0',
+      versao:  '1.1.0',
       geradoEm: new Date().toISOString(),
       dados
     }, null, 2);

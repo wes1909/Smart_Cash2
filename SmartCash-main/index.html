@@ -674,6 +674,63 @@
     </div>
   </div>
 
+  <!-- Modal: Amortização de dívida -->
+  <div class="modal" id="modalAmortizacaoDivida" role="dialog" aria-modal="true" aria-labelledby="amortizacaoTitulo">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="amortizacaoTitulo">Amortizar dívida</h3>
+        <button class="modal-close" data-modal="modalAmortizacaoDivida" aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">
+        <strong id="amortizacaoNome"></strong>
+        <div class="debt-balance-summary">
+          <div>Saldo atual <strong id="amortizacaoSaldoAtual"></strong></div>
+          <div>Saldo após amortização <strong id="amortizacaoSaldoPrevisto">—</strong></div>
+        </div>
+        <div class="form-group">
+          <label for="amortizacaoData">Data do pagamento *</label>
+          <input type="date" id="amortizacaoData" required>
+        </div>
+        <div class="form-group">
+          <label for="amortizacaoValor">Valor da amortização *</label>
+          <input type="number" id="amortizacaoValor" min="0.01" step="0.01" required aria-describedby="errAmortizacao">
+        </div>
+        <div class="form-group">
+          <label for="amortizacaoObservacao">Observação (opcional)</label>
+          <textarea id="amortizacaoObservacao" rows="3"></textarea>
+        </div>
+        <span class="field-error" id="errAmortizacao" role="alert"></span>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-modal="modalAmortizacaoDivida">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarAmortizacao">Registrar amortização</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Histórico de amortizações, somente leitura -->
+  <div class="modal" id="modalHistoricoDivida" role="dialog" aria-modal="true" aria-labelledby="historicoDividaTitulo">
+    <div class="modal-content debt-history-modal">
+      <div class="modal-header">
+        <h3 id="historicoDividaTitulo">Histórico de amortizações</h3>
+        <button class="modal-close" data-modal="modalHistoricoDivida" aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">
+        <strong id="historicoDividaNome"></strong>
+        <p id="historicoDividaSaldo"></p>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Data</th><th>Valor</th><th>Observação</th></tr></thead>
+            <tbody id="historicoDividaBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-modal="modalHistoricoDivida">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Reserva -->
   <div class="modal" id="modalReserva" role="dialog" aria-modal="true">
     <div class="modal-content">

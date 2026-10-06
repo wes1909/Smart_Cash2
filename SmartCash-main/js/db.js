@@ -3,7 +3,7 @@
 
 const ALL_STORES = [
   'configuracoes', 'contas', 'pagamentos', 'gastos',
-  'ganhos', 'dividas', 'investimentos', 'reservas'
+  'ganhos', 'dividas', 'investimentos', 'reservas', 'divida_pagamentos'
 ];
 
 // Auxiliares encapsulados; as 13 funções públicas permanecem abaixo.
@@ -25,6 +25,9 @@ const financialDB = (() => {
     gastos: { data: 'data', descricao: 'descricao', categoria: 'categoria', semana: 'semana', valor: 'valor' },
     ganhos: { data: 'data', descricao: 'descricao', categoria: 'categoria', valor: 'valor' },
     dividas: { nome: 'nome', saldoAtual: 'saldo_atual', jurosMensal: 'juros_mensal', parcelaMinima: 'parcela_minima' },
+    divida_pagamentos: {
+      dividaId: 'divida_id', dataPagamento: 'data_pagamento', valor: 'valor', observacao: 'observacao'
+    },
     investimentos: {
       nome: 'nome', saldoInicial: 'saldo_inicial', aporteMensal: 'aporte_mensal',
       rentabilidadeMensal: 'rentabilidade_mensal'
@@ -33,10 +36,10 @@ const financialDB = (() => {
   };
   const numeric = new Set([
     'limiteSemanal', 'valorParcela', 'parcelasTotais', 'parcelasRestantes',
-    'contaId', 'valorPago', 'semana', 'valor', 'saldoAtual', 'jurosMensal',
+    'contaId', 'dividaId', 'valorPago', 'semana', 'valor', 'saldoAtual', 'jurosMensal',
     'parcelaMinima', 'saldoInicial', 'aporteMensal', 'rentabilidadeMensal', 'valorGuardado'
   ]);
-  const nullable = new Set(['parcelasTotais', 'parcelasRestantes', 'contaId']);
+  const nullable = new Set(['parcelasTotais', 'parcelasRestantes', 'contaId', 'observacao']);
   const pageSize = 500;
 
   function schema(storeName) {
@@ -85,6 +88,7 @@ const financialDB = (() => {
       row.id = 1;
     } else if (data.id != null) row.id = id(data.id);
     if (row.conta_id != null) row.conta_id = id(row.conta_id);
+    if (row.divida_id != null) row.divida_id = id(row.divida_id);
     return row;
   }
 
@@ -93,7 +97,7 @@ const financialDB = (() => {
     for (const [js, sql] of Object.entries(schema(storeName))) {
       const value = row[sql];
       if (value == null) result[js] = value;
-      else if (js === 'contaId') result[js] = id(value);
+      else if (js === 'contaId' || js === 'dividaId') result[js] = id(value);
       else if (numeric.has(js)) {
         result[js] = Number(value);
         if (!Number.isFinite(result[js])) throw new Error(`Valor numérico inválido: ${js}`);
@@ -131,8 +135,9 @@ const financialDB = (() => {
   }
 
   async function clear(userId) {
-    // Filhos primeiro; nenhuma operação inclui divida_pagamentos.
-    for (const storeName of ['pagamentos', ...ALL_STORES.filter(name => name !== 'pagamentos')]) {
+    // Históricos primeiro, inclusive a FK de dívidas com ON DELETE RESTRICT.
+    for (const storeName of ['divida_pagamentos', 'pagamentos',
+      ...ALL_STORES.filter(name => !['pagamentos', 'divida_pagamentos'].includes(name))]) {
       await execute(supabaseClient.from(storeName).delete().eq('user_id', userId), userId);
     }
     // Compatibilidade com o Promise.all da versão IndexedDB.
@@ -171,7 +176,9 @@ const financialDB = (() => {
           const oldId = id(record.id);
           if (seen.has(oldId)) throw new Error(`ID duplicado no backup: ${storeName}/${oldId}`);
           seen.add(oldId);
-        } else if (storeName === 'contas') throw new Error('Conta sem ID no backup.');
+        } else if (storeName === 'contas' || storeName === 'dividas') {
+          throw new Error(`Registro sem ID no backup: ${storeName}`);
+        }
         const copy = {};
         for (const [js, sql] of Object.entries(schema(storeName))) {
           const value = row[sql];
@@ -198,10 +205,15 @@ const financialDB = (() => {
         return { oldId: record.id == null ? null : id(record.id), data: copy };
       });
     }
+    const debtIds = new Set(prepared.dividas.map(item => item.oldId));
+    for (const item of prepared.divida_pagamentos) {
+      if (!debtIds.has(item.data.dividaId)) throw new Error('Amortização sem dívida correspondente no backup.');
+      if (item.data.valor <= 0) throw new Error('Amortização inválida no backup.');
+    }
     return prepared;
   }
 
-  return { schema, id, user, execute, columns, fromRow, readAll, write, clear, monthBounds, validateBackup };
+  return { schema, id, user, execute, columns, fromRow, readAll, write, clear, monthBounds, validDate, validateBackup };
 })();
 
 /** Inicializa o adaptador; o chamador atual apenas aguarda sua conclusão. */
@@ -274,7 +286,7 @@ async function dbGetGanhosPorMes(mesReferencia) {
   return financialDB.readAll('ganhos', await financialDB.user(), query => query.gte('data', start).lt('data', end));
 }
 
-/** Limpa exclusivamente as oito tabelas do usuário atual. */
+/** Limpa exclusivamente as tabelas do usuário atual. */
 async function dbClearAll() {
   return financialDB.clear(await financialDB.user());
 }
@@ -296,12 +308,44 @@ async function dbImportAll(data) {
   for (const item of prepared.contas) {
     accountIds.set(item.oldId, await financialDB.write('contas', item.data, userId, true));
   }
-  for (const storeName of ALL_STORES.filter(name => name !== 'contas')) {
+  const debtIds = new Map();
+  for (const item of prepared.dividas) {
+    debtIds.set(item.oldId, await financialDB.write('dividas', item.data, userId, true));
+  }
+  for (const storeName of ALL_STORES.filter(name => !['contas', 'dividas'].includes(name))) {
     for (const item of prepared[storeName]) {
       const record = { ...item.data };
       if (storeName === 'pagamentos') record.contaId = accountIds.get(record.contaId) ?? null;
+      // Importa o histórico diretamente; o saldo do backup já inclui as amortizações.
+      if (storeName === 'divida_pagamentos') record.dividaId = debtIds.get(record.dividaId);
       if (storeName === 'configuracoes') record.id = 1;
       await financialDB.write(storeName, record, userId, true);
     }
   }
+}
+
+/** Histórico somente do usuário e da dívida solicitada, mais recente primeiro. */
+async function dbGetPagamentosPorDivida(dividaId) {
+  const debtId = financialDB.id(dividaId);
+  const rows = await financialDB.readAll('divida_pagamentos', await financialDB.user(),
+    query => query.eq('divida_id', debtId));
+  return rows.sort((a, b) => b.dataPagamento.localeCompare(a.dataPagamento) || b.id - a.id);
+}
+
+/** A RPC registra o histórico e reduz o saldo em uma única transação. */
+async function dbAmortizarDivida(dividaId, dataPagamento, valor, observacao) {
+  const userId = await financialDB.user();
+  const debtId = financialDB.id(dividaId);
+  if (!financialDB.validDate(dataPagamento)) throw new Error('Data de amortização inválida.');
+  if (typeof valor !== 'number' || !Number.isFinite(valor) || valor <= 0) {
+    throw new Error('A amortização deve ser maior que zero.');
+  }
+  if (observacao != null && typeof observacao !== 'string') throw new Error('Observação inválida.');
+  // O proprietário é determinado no servidor pela sessão, não por um argumento livre.
+  return financialDB.execute(supabaseClient.rpc('amortizar_divida', {
+    p_divida_id: debtId,
+    p_data_pagamento: dataPagamento,
+    p_valor: valor,
+    p_observacao: observacao?.trim() || null
+  }), userId);
 }

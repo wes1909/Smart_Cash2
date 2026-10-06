@@ -46,6 +46,7 @@ function fixture(initialUser = 'A') {
     closest(selector) { return selector === '#' + this.id ? this : null; }
     querySelectorAll() { return []; }
     setAttribute() {}
+    checkValidity() { return this.validity !== false; }
     appendChild(node) { this.children.push(node); }
     replaceChildren() { this.children = []; }
     focus() {}
@@ -176,4 +177,89 @@ test('auth oculta imediatamente, aceita novo botão de logout e preserva renova�
   assert.equal(app.listeners.click.length, 1);
   await app.emit('click', { target: f.nodes.get('btnLogout') }); await flush();
   assert.equal(app.hidden, true); assert.equal(f.evaluate('appUserId'), null);
+});
+
+test('amortização valida limites, prévia, confirmação e bloqueia duplicidade', async () => {
+  const f = fixture(); await f.c.initApp(f.session());
+  const debt = { id: 10, nome: 'Cartão', saldoAtual: 100, jurosMensal: 2, parcelaMinima: 10 };
+  f.c.dbGet = async () => ({ ...debt });
+  let renders = 0, rpcCalls = 0;
+  f.c.renderDividas = async () => { renders++; };
+  const sending = deferred();
+  f.c.dbAmortizarDivida = async (id, date, value, observation) => {
+    rpcCalls++; assert.equal(id, 10); assert.equal(date, '2026-10-06');
+    assert.equal(value, 100); assert.equal(observation, 'Extra');
+    await sending.promise; debt.saldoAtual -= value;
+  };
+  await f.c.abrirAmortizacaoDivida(10);
+  f.nodes.get('amortizacaoData').value = '2026-10-06';
+  const value = f.nodes.get('amortizacaoValor');
+  for (const invalid of ['0', '-1', '101', 'NaN']) {
+    value.value = invalid; await f.c.salvarAmortizacaoDivida(); assert.equal(rpcCalls, 0);
+  }
+  value.value = '25'; f.c.atualizarSaldoAmortizacao();
+  assert.equal(f.nodes.get('amortizacaoSaldoPrevisto').textContent, 'R$ 75,00');
+  value.value = '100'; f.nodes.get('amortizacaoObservacao').value = ' Extra ';
+  const request = f.c.salvarAmortizacaoDivida();
+  assert.equal(f.nodes.get('btnSalvarAmortizacao').disabled, true);
+  await f.c.salvarAmortizacaoDivida(); assert.equal(rpcCalls, 1);
+  sending.resolve(); await request;
+  assert.equal(debt.saldoAtual, 0); assert.equal(renders, 1);
+  assert.equal(f.nodes.get('modalAmortizacaoDivida').classList.contains('active'), false);
+  await f.c.abrirAmortizacaoDivida(10); assert.equal(rpcCalls, 1);
+});
+
+test('quitadas ficam abaixo, não recebem prioridade; exclusão preserva histórico', async () => {
+  const f = fixture(); await f.c.initApp(f.session());
+  const settled = { id: 10, nome: 'Quitada', saldoAtual: 0, jurosMensal: 2, parcelaMinima: 10 };
+  const active = { id: 11, nome: 'Ativa', saldoAtual: 100, jurosMensal: 2, parcelaMinima: 10 };
+  f.c.dbGetAll = async () => [settled, active];
+  let ordered;
+  f.c.renderTabelaDividas = rows => { ordered = rows; };
+  await f.c.renderDividas();
+  assert.deepEqual(Array.from(ordered, d => d.id), [11, 10]);
+  assert.equal(ordered[0].vf12, 100 * Math.pow(1.02, 12));
+  assert.equal(ordered[1].vf12, 0);
+  assert.equal(f.nodes.get('recomendacaoDivida').innerHTML.includes('Após quitar'), false);
+  f.c.renderRecomendacao([settled]);
+  assert.match(f.nodes.get('recomendacaoDivida').innerHTML, /Todas as dívidas estão quitadas/);
+  let deleted = 0; f.c.dbDelete = async () => { deleted++; };
+  f.c.dbGetPagamentosPorDivida = async () => [{ id: 1 }];
+  await f.c.excluirDivida(10); assert.equal(deleted, 0);
+  assert.equal(f.evaluate('_confirmCallback'), null);
+});
+
+test('saldo zero somente na edição de quitada; histórico escapa observações e respeita logout', async () => {
+  const f = fixture(); await f.c.initApp(f.session());
+  let writes = 0; f.c.dbPut = async () => { writes++; }; f.c.renderDividas = async () => {};
+  f.c.abrirFormDivida();
+  f.nodes.get('dividaNome').value = 'Teste'; f.nodes.get('dividaSaldo').value = '0'; f.nodes.get('dividaJuros').value = '2';
+  await f.c.salvarDivida(); assert.equal(writes, 0);
+  const settled = { id: 10, nome: 'Quitada', saldoAtual: 0, jurosMensal: 2, parcelaMinima: 10 };
+  f.c.dbGet = async () => settled; f.c.abrirFormDivida(settled);
+  await f.c.salvarDivida(); assert.equal(writes, 1);
+  f.c.dbGetPagamentosPorDivida = async () => [{ id: 1, dataPagamento: '2026-10-06', valor: 100, observacao: '<script>bad</script>' }];
+  await f.c.abrirHistoricoDivida(10);
+  assert.match(f.nodes.get('historicoDividaBody').innerHTML, /&lt;script&gt;/);
+  const pending = deferred(); f.c.dbGetPagamentosPorDivida = () => pending.promise;
+  const history = f.c.abrirHistoricoDivida(10);
+  f.c.resetAppSession(); pending.resolve([]); await history;
+  assert.equal(f.nodes.get('historicoDividaBody').innerHTML, '');
+});
+
+test('erro de RPC mantém modal aberto sem sucesso; resposta após logout não renderiza', async () => {
+  const f = fixture(); await f.c.initApp(f.session());
+  f.c.dbGet = async () => ({ id: 10, nome: 'Debt', saldoAtual: 100 });
+  await f.c.abrirAmortizacaoDivida(10);
+  f.nodes.get('amortizacaoData').value = '2026-10-06'; f.nodes.get('amortizacaoValor').value = '25';
+  let rendered = 0; f.c.renderDividas = async () => { rendered++; };
+  f.c.dbAmortizarDivida = async () => { throw Error('remote'); };
+  await f.c.salvarAmortizacaoDivida();
+  assert.equal(f.nodes.get('modalAmortizacaoDivida').classList.contains('active'), true);
+  assert.equal(f.nodes.get('btnSalvarAmortizacao').disabled, false);
+  assert.equal(rendered, 0);
+  assert.match(f.nodes.get('errAmortizacao').textContent, /Não foi possível confirmar/);
+  const pending = deferred(); f.c.dbAmortizarDivida = () => pending.promise;
+  const request = f.c.salvarAmortizacaoDivida(); f.c.resetAppSession(); pending.resolve(); await request;
+  assert.equal(rendered, 0); assert.equal(f.nodes.get('errAmortizacao').textContent, '');
 });
