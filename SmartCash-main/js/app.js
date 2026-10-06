@@ -239,7 +239,7 @@ async function navigateTo(screen) {
   // Atualiza título da página
   const titles = {
     dashboard:     'Dashboard',
-    contas:        'Contas',
+    contas:        'Despesas',
     dividas:       'Dívidas',
     patrimonio:    'Patrimônio',
     planejamento:  'Planejamento Semanal',
@@ -429,6 +429,11 @@ function formatCurrency(value) {
     .replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
   return `${symbol} ${formatted}`;
+}
+
+/** Rótulo visual; preserva o valor da categoria em registros e formulários. */
+function formatCategoryLabel(category) {
+  return category === 'Contas de Casa' ? 'Despesas de Casa' : category;
 }
 
 /**

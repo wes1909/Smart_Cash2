@@ -130,7 +130,7 @@ function renderGanhosTable(ganhos) {
     row.innerHTML = `
       <td>${formatDate(g.data)}</td>
       <td><div class="cell-main">${sanitizeDash(g.descricao)}</div></td>
-      <td><span class="badge badge-green">${sanitizeDash(g.categoria || 'Outros')}</span></td>
+      <td><span class="badge badge-green">${sanitizeDash(formatCategoryLabel(g.categoria || 'Outros'))}</span></td>
       <td class="text-success fw-bold">${formatCurrency(g.valor)}</td>
       <td class="actions-cell">
         <button class="btn-icon" title="Editar" onclick="editarGanho(${g.id})">✏️</button>
@@ -351,7 +351,7 @@ function renderChartPizza(gastos) {
   _chartPizza = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels,
+      labels: labels.map(formatCategoryLabel),
       datasets: [{
         data,
         backgroundColor: labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),

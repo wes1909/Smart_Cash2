@@ -38,7 +38,7 @@ async function renderContas() {
     const ativas      = contas.filter(c => c.ativa);
     const totalValor  = ativas.reduce((s, c) => s + (c.valorParcela || 0), 0);
     setElContas('contasResumo',
-      `${ativas.length} conta(s) ativa(s) — Total mensal: ${formatCurrency(totalValor)}`
+      `${ativas.length} despesa(s) ativa(s) — Total mensal: ${formatCurrency(totalValor)}`
     );
 
     // Configura eventos (uma única vez por render)
@@ -48,7 +48,7 @@ async function renderContas() {
   } catch (err) {
     if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Contas] Erro ao renderizar:', err);
-    showToast('Erro ao carregar contas.', 'error');
+    showToast('Erro ao carregar despesas.', 'error');
   }
 }
 
@@ -85,7 +85,7 @@ function renderTabelaContas(contas, pagamentos) {
 
   if (contas.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="8" class="table-empty">Nenhuma conta encontrada. Clique em "+ Nova Conta" para adicionar.</td></tr>';
+      '<tr><td colspan="8" class="table-empty">Nenhuma despesa encontrada. Clique em "+ Nova Despesa" para adicionar.</td></tr>';
     return;
   }
 
@@ -133,7 +133,7 @@ function renderTabelaContas(contas, pagamentos) {
         <div class="cell-main">${escHtml(conta.nome)}</div>
         <div class="cell-sub">${conta.dataCriacao ? 'desde ' + formatDate(conta.dataCriacao) : ''}</div>
       </td>
-      <td><span class="badge badge-blue">${escHtml(conta.categoria)}</span></td>
+      <td><span class="badge badge-blue">${escHtml(formatCategoryLabel(conta.categoria))}</span></td>
       <td>${formatCurrency(conta.valorParcela)}</td>
       <td>${parcelaInfo}</td>
       <td>${valorPago > 0 ? formatCurrency(valorPago) : '—'}</td>
@@ -211,7 +211,7 @@ function toggleCamposParcelada(mostrar) {
  * Abre o modal para CRIAR uma nova conta.
  */
 function abrirFormConta() {
-  setElContas('modalContaTitulo', 'Nova Conta');
+  setElContas('modalContaTitulo', 'Nova Despesa');
   setValEl('contaId',               '');
   setValEl('contaNome',             '');
   setValEl('contaCategoria',        'Financiamento');
@@ -237,9 +237,9 @@ async function editarConta(id) {
   try {
     const conta = await dbGet('contas', id);
     if (!isCurrentAppSession(sessionEpoch)) return;
-    if (!conta) { showToast('Conta não encontrada.', 'error'); return; }
+    if (!conta) { showToast('Despesa não encontrada.', 'error'); return; }
 
-    setElContas('modalContaTitulo', 'Editar Conta');
+    setElContas('modalContaTitulo', 'Editar Despesa');
     setValEl('contaId',               String(conta.id));
     setValEl('contaNome',             conta.nome);
     setValEl('contaCategoria',        conta.categoria);
@@ -255,7 +255,7 @@ async function editarConta(id) {
     openModal('modalConta');
   } catch (err) {
     if (!isCurrentAppSession(sessionEpoch)) return;
-    showToast('Erro ao carregar conta.', 'error');
+    showToast('Erro ao carregar despesa.', 'error');
   }
 }
 
@@ -311,11 +311,11 @@ async function salvarConta() {
     if (!isCurrentAppSession(sessionEpoch)) return;
     await renderDashboard();
     if (!isCurrentAppSession(sessionEpoch)) return;
-    showToast(id ? 'Conta atualizada com sucesso!' : 'Conta criada com sucesso!');
+    showToast(id ? 'Despesa atualizada com sucesso!' : 'Despesa criada com sucesso!');
   } catch (err) {
     if (!isCurrentAppSession(sessionEpoch)) return;
     console.error('[Contas] Erro ao salvar:', err);
-    showToast('Erro ao salvar a conta.', 'error');
+    showToast('Erro ao salvar a despesa.', 'error');
   }
 }
 
@@ -325,7 +325,7 @@ async function salvarConta() {
  */
 function excluirConta(id) {
   showConfirm(
-    'Deseja excluir esta conta? O histórico de pagamentos será mantido.',
+    'Deseja excluir esta despesa? O histórico de pagamentos será mantido.',
     async () => {
       const sessionEpoch = appSessionEpoch;
       if (!isCurrentAppSession(sessionEpoch)) return;
@@ -336,10 +336,10 @@ function excluirConta(id) {
         if (!isCurrentAppSession(sessionEpoch)) return;
         await renderDashboard();
         if (!isCurrentAppSession(sessionEpoch)) return;
-        showToast('Conta excluída.');
+        showToast('Despesa excluída.');
       } catch (err) {
         if (!isCurrentAppSession(sessionEpoch)) return;
-        showToast('Erro ao excluir a conta.', 'error');
+        showToast('Erro ao excluir a despesa.', 'error');
       }
     }
   );
@@ -366,10 +366,10 @@ async function duplicarConta(id) {
     if (!isCurrentAppSession(sessionEpoch)) return;
     await renderContas();
     if (!isCurrentAppSession(sessionEpoch)) return;
-    showToast('Conta duplicada com sucesso!');
+    showToast('Despesa duplicada com sucesso!');
   } catch (err) {
     if (!isCurrentAppSession(sessionEpoch)) return;
-    showToast('Erro ao duplicar a conta.', 'error');
+    showToast('Erro ao duplicar a despesa.', 'error');
   }
 }
 

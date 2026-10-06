@@ -59,7 +59,7 @@ async function renderPlanejamento() {
     // ── Render ───────────────────────────────────────────────
 
     setValPl('planLimiteSemanal', limiteSemanal ? String(limiteSemanal) : '');
-    setElPl('planSaldoInfo', `Saldo do mês (ganhos − contas pagas − guardado): ${formatCurrency(saldoParaGastos)}`);
+    setElPl('planSaldoInfo', `Saldo do mês (ganhos − despesas pagas − guardado): ${formatCurrency(saldoParaGastos)}`);
 
     renderSemanasTable(limiteSemanal, gastosPorSemana, NUM_SEMANAS, saldoParaGastos);
     renderGastosTable(gastos);
@@ -235,7 +235,7 @@ function renderGastosTable(gastos) {
       <td>
         <div class="cell-main">${sanitize(g.descricao)}</div>
       </td>
-      <td><span class="badge badge-blue">${sanitize(g.categoria)}</span></td>
+      <td><span class="badge badge-blue">${sanitize(formatCategoryLabel(g.categoria))}</span></td>
       <td>Sem. ${g.semana}</td>
       <td class="text-danger fw-bold">${formatCurrency(g.valor)}</td>
       <td class="actions-cell">

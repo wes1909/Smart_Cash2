@@ -59,7 +59,7 @@
       </li>
       <li class="nav-item" data-screen="contas" tabindex="0">
         <span class="nav-icon">📋</span>
-        <span class="nav-label">Contas</span>
+        <span class="nav-label">Despesas</span>
       </li>
       <li class="nav-item" data-screen="dividas" tabindex="0">
         <span class="nav-icon">💳</span>
@@ -129,7 +129,7 @@
           <div class="card card-expenses">
             <div class="card-icon">📋</div>
             <div class="card-info">
-              <span class="card-label">Total de Contas</span>
+              <span class="card-label">Total de Despesas</span>
               <span class="card-value" id="dashContas">R$ 0,00</span>
             </div>
           </div>
@@ -210,15 +210,15 @@
       <!-- ========== TELA 2: CONTAS ========== -->
       <section class="screen" id="screen-contas">
         <div class="screen-header">
-          <h2>Contas</h2>
-          <button class="btn btn-primary" id="btnNovaContas">+ Nova Conta</button>
+          <h2>Despesas</h2>
+          <button class="btn btn-primary" id="btnNovaContas">+ Nova Despesa</button>
         </div>
 
         <div class="filter-bar">
-          <input type="text" class="search-input" id="searchContas" placeholder="🔍 Pesquisar conta...">
+          <input type="text" class="search-input" id="searchContas" placeholder="🔍 Pesquisar despesa...">
           <select class="filter-select" id="filterContas">
-            <option value="">Todas as contas</option>
-            <option value="fixa">Contas Fixas</option>
+            <option value="">Todas as despesas</option>
+            <option value="fixa">Despesas Fixas</option>
             <option value="parcelada">Parceladas</option>
             <option value="ativa">Ativas</option>
             <option value="encerrada">Encerradas</option>
@@ -229,7 +229,7 @@
           <table class="data-table" id="tabelaContas">
             <thead>
               <tr>
-                <th>Conta</th>
+                <th>Despesa</th>
                 <th>Categoria</th>
                 <th>Parcela</th>
                 <th>Parcelas Rest.</th>
@@ -528,7 +528,7 @@
     </button>
     <button class="bottom-nav-item" data-screen="contas">
       <span>📋</span>
-      <span>Contas</span>
+      <span>Despesas</span>
     </button>
     <button class="bottom-nav-item" data-screen="dividas">
       <span>💳</span>
@@ -552,13 +552,13 @@
   <div class="modal" id="modalConta" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 id="modalContaTitulo">Nova Conta</h3>
+        <h3 id="modalContaTitulo">Nova Despesa</h3>
         <button class="modal-close" data-modal="modalConta" aria-label="Fechar">✕</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="contaId">
         <div class="form-group">
-          <label>Nome da Conta *</label>
+          <label>Nome da Despesa *</label>
           <input type="text" id="contaNome" placeholder="Ex: Moto, Aluguel, Energia...">
           <span class="field-error" id="errContaNome"></span>
         </div>
@@ -585,7 +585,7 @@
         </div>
         <div class="form-check">
           <input type="checkbox" id="contaFixa">
-          <label for="contaFixa">Conta Fixa (nunca termina — ex: aluguel, energia)</label>
+          <label for="contaFixa">Despesa Fixa (nunca termina — ex: aluguel, energia)</label>
         </div>
         <div id="grupoParcelasTotal" class="form-group">
           <label>Parcelas Totais</label>
@@ -602,7 +602,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-modal="modalConta">Cancelar</button>
-        <button class="btn btn-primary" id="btnSalvarConta">Salvar Conta</button>
+        <button class="btn btn-primary" id="btnSalvarConta">Salvar Despesa</button>
       </div>
     </div>
   </div>
@@ -761,7 +761,7 @@
             <option>Combustível</option>
             <option>Transporte / Uber</option>
             <option>Moradia / Aluguel</option>
-            <option>Contas de Casa</option>
+            <option value="Contas de Casa">Despesas de Casa</option>
             <option>Lazer</option>
             <option>Supérfluos</option>
             <option>Saúde</option>

@@ -1,7 +1,7 @@
 {
   "name": "SmartCash — Finanças Pessoais",
   "short_name": "SmartCash",
-  "description": "Sistema financeiro pessoal completo com controle de contas, dívidas, patrimônio e planejamento semanal.",
+  "description": "Sistema financeiro pessoal completo com controle de despesas, dívidas, patrimônio e planejamento semanal.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

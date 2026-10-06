@@ -216,7 +216,7 @@ async function exportarCSV() {
     let csv = `SmartCash — Exportação CSV — ${new Date().toLocaleDateString('pt-BR')}\n\n`;
 
     // Contas
-    csv += 'CONTAS\n';
+    csv += 'DESPESAS\n';
     csv += 'ID,Nome,Categoria,Valor Parcela,Parcelas Totais,Parcelas Restantes,Fixa,Ativa,Data Criação\n';
     (dados.contas || []).forEach(c => {
       csv += `${c.id},"${c.nome}","${c.categoria}",${c.valorParcela},` +
@@ -226,7 +226,7 @@ async function exportarCSV() {
 
     // Pagamentos
     csv += '\nPAGAMENTOS\n';
-    csv += 'ID,Conta ID,Mês Referência,Valor Pago,Data Pagamento\n';
+    csv += 'ID,Despesa ID,Mês Referência,Valor Pago,Data Pagamento\n';
     (dados.pagamentos || []).forEach(p => {
       csv += `${p.id},${p.contaId},${p.mesReferencia},${p.valorPago},${p.dataPagamento}\n`;
     });
