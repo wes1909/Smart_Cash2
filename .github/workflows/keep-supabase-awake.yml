@@ -1,0 +1,22 @@
+name: Keep Supabase Awake
+
+on:
+  schedule:
+    - cron: "0 12 * * 1,4"
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Supabase
+        run: |
+          response=$(curl --silent --show-error --fail \
+            --request POST \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/health_check" \
+            --header "apikey: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data '{}')
+
+          echo "Supabase respondeu: $response"
