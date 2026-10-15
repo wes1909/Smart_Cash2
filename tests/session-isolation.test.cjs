@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const root = path.join(__dirname, '..', 'SmartCash-main');
+const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const appMarkup = html.split('<div id="appContainer" hidden>')[1].split('</div><!-- appContainer -->')[0];
 const deferred = () => {

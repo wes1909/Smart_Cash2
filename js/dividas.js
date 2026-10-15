@@ -3,13 +3,82 @@
  * Tela 3: Dívidas
  * -----------------------------------------------
  * Gerencia dívidas com:
- *  - Ranking automático de prioridade (maior crescimento futuro)
+ *  - Classificação explicável de prioridade por regras
  *  - Cálculo de Valor Futuro: VF = VP × (1 + i)^n
  *  - Simulação por 1, 3, 6 e 12 meses
- *  - Recomendação automática de qual quitar primeiro
+ *  - Apoio à decisão sobre atenção às dívidas
  */
 
 'use strict';
+
+/**
+ * Análise pura, sem mutações ou acesso ao banco. Critérios v1: ver
+ * docs/apoio-decisao-dividas.md. Percentual e taxa não somam pontos.
+ */
+function analisarPrioridadeDividas(dividas) {
+  const projetadas = dividas.map(d => {
+    const quitada = d.saldoAtual === 0;
+    const valida = Number.isFinite(d.saldoAtual) && d.saldoAtual >= 0 &&
+      Number.isFinite(d.jurosMensal) && d.jurosMensal >= 0;
+    const vf12 = quitada ? 0 : valida ? calcValorFuturo(d.saldoAtual, d.jurosMensal, 12) : NaN;
+    const crescimento = vf12 - d.saldoAtual;
+    return { ...d, vf12, crescimento,
+      pctCrescimento: quitada ? 0 : crescimento / d.saldoAtual * 100,
+      analisavel: !quitada && valida && Number.isFinite(vf12),
+      prioridade: null, nivelPrioridade: 0, regrasAcionadas: [], justificativa: '', observacaoPrioridade: '' };
+  });
+  const ativas = projetadas.filter(d => d.analisavel);
+  // Ordenação antes da soma torna o resultado independente da ordem de entrada.
+  const crescimentos = ativas.map(d => d.crescimento).sort((a, b) => a - b);
+  const maior = crescimentos[crescimentos.length - 1] || 0;
+  // Normalizar evita overflow na soma de projeções individualmente finitas.
+  const somaNormalizada = maior > 0 ? crescimentos.reduce((s, v) => s + v / maior, 0) : 0;
+  for (const d of projetadas) {
+    if (d.saldoAtual === 0) {
+      d.regrasAcionadas = ['R1'];
+      d.justificativa = 'Dívida quitada, sem prioridade.';
+      continue;
+    }
+    if (!d.analisavel) {
+      d.justificativa = 'Não classificada: confira o saldo e a taxa de juros.';
+      continue;
+    }
+    const participacao = somaNormalizada > 0 ? (d.crescimento / maior) / somaNormalizada : 0;
+    const impactoRelativo = ativas.length > 1 && d.crescimento > 0 && participacao >= 1 / ativas.length;
+    // 60% do crescimento total implica pelo menos 1,5 vez todo o restante.
+    const destaque = ativas.length > 1 && participacao >= 0.60;
+    const combinacao = d.jurosMensal >= 5 && (ativas.length === 1 || impactoRelativo);
+    const motivos = [];
+    if (combinacao || destaque) {
+      d.prioridade = 'Alta'; d.nivelPrioridade = 3; d.regrasAcionadas = ['R2'];
+      if (combinacao) motivos.push(`taxa elevada de ${d.jurosMensal.toFixed(2)}% ao mês (limite: 5%)`);
+      if (impactoRelativo) motivos.push('crescimento em reais igual ou superior à média das dívidas ativas analisáveis');
+      if (ativas.length === 1) motivos.push('crescimento projetado associado a essa taxa na única dívida ativa analisável');
+      if (destaque) motivos.push('concentração de pelo menos 60% do crescimento projetado total das dívidas ativas analisáveis');
+    } else if (d.pctCrescimento >= 25 || impactoRelativo) {
+      d.prioridade = 'Média'; d.nivelPrioridade = 2; d.regrasAcionadas = ['R3'];
+      if (d.pctCrescimento >= 25) motivos.push(`crescimento de ${d.pctCrescimento.toFixed(2)}% em 12 meses (limite: 25%)`);
+      if (impactoRelativo) motivos.push('crescimento em reais igual ou superior à média das dívidas ativas analisáveis');
+    } else {
+      d.prioridade = 'Baixa'; d.nivelPrioridade = 1; d.regrasAcionadas = ['R4'];
+      motivos.push('crescimento inferior a 25% em 12 meses');
+      if (ativas.length > 1) motivos.push(d.crescimento > 0
+        ? 'crescimento em reais abaixo da média das dívidas ativas analisáveis'
+        : 'ausência de crescimento projetado');
+    }
+    d.justificativa = `Prioridade ${d.prioridade.toLowerCase()} devido a ${motivos.join(' e ')}. Projeção sem pagamentos.`;
+    if (Number.isFinite(d.parcelaMinima) && d.parcelaMinima > 0 &&
+        d.parcelaMinima <= d.saldoAtual * d.jurosMensal / 100) {
+      d.regrasAcionadas.push('R5');
+      d.observacaoPrioridade = 'A parcela mínima informada não supera os juros estimados de um mês sobre o saldo atual. Confira as condições do contrato.';
+    }
+  }
+  return projetadas.sort((a, b) =>
+    Number(b.saldoAtual > 0) - Number(a.saldoAtual > 0) ||
+    b.nivelPrioridade - a.nivelPrioridade ||
+    (Number.isFinite(b.crescimento) ? b.crescimento : 0) - (Number.isFinite(a.crescimento) ? a.crescimento : 0) ||
+    (b.jurosMensal || 0) - (a.jurosMensal || 0) || a.id - b.id);
+}
 
 // ============================================================
 // RENDER PRINCIPAL
@@ -25,18 +94,7 @@ async function renderDividas() {
     const dividas = await dbGetAll('dividas');
     if (!isCurrentAppSession(sessionEpoch)) return;
 
-    // Calcula crescimento em 12 meses e ordena por prioridade
-    const dividasComProjecao = dividas
-      .map(d => {
-        const vf12      = calcValorFuturo(d.saldoAtual || 0, d.jurosMensal || 0, 12);
-        const crescimento = vf12 - (d.saldoAtual || 0);
-        const pctCrescimento = d.saldoAtual > 0
-          ? ((crescimento / d.saldoAtual) * 100)
-          : 0;
-        return { ...d, vf12, crescimento, pctCrescimento };
-      })
-      .sort((a, b) => Number(b.saldoAtual > 0) - Number(a.saldoAtual > 0) ||
-        b.crescimento - a.crescimento); // Quitadas após as dívidas ativas.
+    const dividasComProjecao = analisarPrioridadeDividas(dividas);
 
     // Tabela
     renderTabelaDividas(dividasComProjecao);
@@ -75,28 +133,19 @@ function renderTabelaDividas(dividas) {
 
   tbody.innerHTML = '';
 
-  dividas.forEach((d, idx) => {
+  dividas.forEach(d => {
     const quitada = d.saldoAtual === 0;
-    const prioridade = idx + 1;
-
-    // Badge de prioridade
-    const priorityClass = prioridade === 1
-      ? 'badge-red'
-      : prioridade === 2
-        ? 'badge-yellow'
-        : 'badge-green';
-
-    const priorLabel = prioridade === 1
-      ? '🔴 1º — Urgente'
-      : prioridade === 2
-        ? '🟡 2º — Importante'
-        : `🟢 ${prioridade}º`;
+    const priorityClass = d.prioridade === 'Alta' ? 'badge-red'
+      : d.prioridade === 'Média' ? 'badge-yellow' : d.prioridade === 'Baixa' ? 'badge-green' : 'badge-gray';
+    const priorLabel = quitada ? 'Quitada' : d.prioridade ? `Prioridade ${d.prioridade}` : 'Não classificada';
 
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><span class="badge ${quitada ? 'badge-green' : priorityClass}">${quitada ? 'Quitada' : priorLabel}</span></td>
+      <td><span class="badge ${quitada ? 'badge-green' : priorityClass}">${priorLabel}</span></td>
       <td>
         <div class="cell-main">${escHtml(d.nome)}</div>
+        <div class="cell-sub">${escHtml(d.justificativa || '')}</div>
+        ${d.observacaoPrioridade ? `<div class="cell-sub">${escHtml(d.observacaoPrioridade)}</div>` : ''}
       </td>
       <td class="${quitada ? 'text-success' : 'text-danger'} fw-bold">${formatCurrency(d.saldoAtual)}</td>
       <td>
@@ -104,12 +153,12 @@ function renderTabelaDividas(dividas) {
       </td>
       <td>${d.parcelaMinima > 0 ? formatCurrency(d.parcelaMinima) : '—'}</td>
       <td>
-        <div class="cell-main ${quitada ? 'text-success' : 'text-danger'}">${formatCurrency(d.vf12)}</div>
+        <div class="cell-main ${quitada ? 'text-success' : 'text-danger'}">${Number.isFinite(d.vf12) ? formatCurrency(d.vf12) : '—'}</div>
         <div class="cell-sub">em 12 meses</div>
       </td>
       <td>
-        <span class="${quitada ? 'text-success' : 'text-danger'} fw-bold">+${formatCurrency(d.crescimento)}</span>
-        <div class="cell-sub ${quitada ? 'text-success' : 'text-danger'}">+${formatNum(d.pctCrescimento, 1)}%</div>
+        <span class="${quitada ? 'text-success' : 'text-danger'} fw-bold">${Number.isFinite(d.crescimento) ? '+' + formatCurrency(d.crescimento) : '—'}</span>
+        <div class="cell-sub ${quitada ? 'text-success' : 'text-danger'}">${Number.isFinite(d.pctCrescimento) ? '+' + formatNum(d.pctCrescimento, 1) + '%' : '—'}</div>
       </td>
       <td class="actions-cell debt-actions">
         ${d.saldoAtual > 0 ? `<button class="btn btn-secondary btn-sm" onclick="abrirAmortizacaoDivida(${d.id})">Amortizar</button>` : ''}
@@ -139,12 +188,16 @@ function renderRecomendacao(dividas) {
     return;
   }
 
-  dividas = dividas.filter(d => d.saldoAtual > 0);
-  if (!dividas.length) {
+  if (dividas.every(d => d.saldoAtual === 0)) {
     el.innerHTML = '<p class="text-success">🎉 Todas as dívidas estão quitadas.</p>';
     return;
   }
 
+  dividas = dividas.filter(d => d.saldoAtual > 0 && d.prioridade);
+  if (!dividas.length) {
+    el.textContent = 'Confira os dados das dívidas para obter uma classificação.';
+    return;
+  }
   const top     = dividas[0];
   const pct     = formatNum(top.pctCrescimento, 1);
   const juros12 = calcValorFuturo(top.saldoAtual, top.jurosMensal, 12) - top.saldoAtual;
@@ -153,16 +206,15 @@ function renderRecomendacao(dividas) {
     <div class="recommendation">
       <span class="rec-icon">⚠️</span>
       <div class="rec-content">
-        <strong>Prioridade #1 de quitação: ${escHtml(top.nome)}</strong>
+        <strong>Apoio à decisão — prioridade ${escHtml(top.prioridade)}: ${escHtml(top.nome)}</strong>
+        <p>${escHtml(top.justificativa)}</p>
         <p>
           Com juros de <strong>${formatNum(top.jurosMensal, 2)}% ao mês</strong>,
           mantendo o saldo atual de <strong>${formatCurrency(top.saldoAtual)}</strong> sem pagar,
           em <strong>12 meses</strong> esta dívida crescerá para
           <strong class="text-danger">${formatCurrency(top.vf12)}</strong>
           — um aumento de <strong class="text-danger">+${formatCurrency(juros12)}</strong> (+${pct}%).
-          ${dividas.length > 1
-            ? ` Após quitar, foque na: <strong>${escHtml(dividas[1].nome)}</strong>.`
-            : ''}
+          Considere estes critérios ao planejar seus pagamentos; a decisão é sua.
         </p>
       </div>
     </div>
